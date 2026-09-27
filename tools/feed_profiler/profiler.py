@@ -19,7 +19,7 @@ from google.protobuf.message import DecodeError
 from google.transit import gtfs_realtime_pb2 as rt
 
 BASE_URL = "https://gtfs.ztp.krakow.pl"
-NETWORKS = {"T": "tramwaje", "A": "autobusy MPK", "M": "Mobilis"}
+NETWORKS = {"T": "trams", "A": "MPK buses", "M": "Mobilis"}
 
 
 def iso(ts):
@@ -184,7 +184,7 @@ def scheduled_timestamp(service_date, clock, tz):
 
 def rate(hit, total):
     return (
-        f"{hit}/{total} ({100 * hit / total:.1f}%)" if total else "n/d (0 obserwacji)"
+        f"{hit}/{total} ({100 * hit / total:.1f}%)" if total else "n/a (0 observations)"
     )
 
 
@@ -531,48 +531,48 @@ def report(args):
 
     def age_stats(values):
         if not values:
-            return "n/d (brak timestamp)"
+            return "n/a (missing timestamp)"
         ordered = sorted(values)
-        return f"mediana {ordered[len(ordered) // 2]:.0f} s; >90 s: {rate(sum(x > 90 for x in values), len(values))}; maksimum {max(values):.0f} s"
+        return f"median {ordered[len(ordered) // 2]:.0f} s; >90 s: {rate(sum(x > 90 for x in values), len(values))}; maximum {max(values):.0f} s"
 
     def examples_line(key):
-        return ", ".join(sorted(examples[key])) or "brak"
+        return ", ".join(sorted(examples[key])) or "none"
 
     lines = [
-        f"# {meta.get('label', 'GTFS')} — profil danych GTFS",
+        f"# {meta.get('label', 'GTFS')} — GTFS data profile",
         "",
-        f"Wygenerowano: {iso(time.time())}. Dane: {iso(first)} – {iso(last)} ({duration:.2f} h); {c['snapshots']} poprawnych próbek z {len(paths)} plików, {len(hashes)} różnych treści.",
+        f"Generated: {iso(time.time())}. Data: {iso(first)} – {iso(last)} ({duration:.2f} h); {c['snapshots']} valid snapshots from {len(paths)} files, {len(hashes)} distinct payloads.",
         "",
         f"GTFS Schedule: {meta.get('gtfs_url', str(zip_path))}  ",
         f"GTFS-RT: {', '.join(meta.get('rt_urls', [meta.get('rt_url', str(source / 'samples'))]))}  ",
         f"SHA-256 ZIP: `{zip_hash}`",
         "",
-        "Zgodność ID dotyczy wyłącznie podanego ZIP i strumieni RT. Osobne źródła RT są zapisywane jako osobne pliki; liczba plików nie jest liczbą cykli pobierania.",
+        "Identifier matching applies only to the supplied ZIP and realtime streams. Separate realtime sources are saved as separate files; the file count is not the number of fetch cycles.",
         "",
         "## GTFS Schedule",
         "",
-        "| Miara | Liczba |",
+        "| Metric | Count |",
         "| --- | ---: |",
         f"| routes | {len(routes)} |",
         f"| stops | {len(stops)} |",
         f"| trips | {len(trip_routes)} |",
         f"| stop_times | {stop_times} |",
         "",
-        "## GTFS-RT — obecność pól",
+        "## GTFS-RT — field presence",
         "",
-        "Mianownik to liczba wystąpień w próbkach, nie liczba unikalnych pojazdów/kursów. Puste identyfikatory są liczone jako brak.",
+        "The denominator counts occurrences across snapshots, not unique vehicles or trips. Empty identifiers count as missing.",
         "",
-        "| Pole | Obserwacje |",
+        "| Field | Observations |",
         "| --- | ---: |",
         f"| VehiclePosition | {c['vp']} |",
         f"| VP vehicle.id | {rate(c['vp_vehicle_id'], c['vp'])} |",
         f"| VP trip.trip_id | {rate(c['vp_trip_id'], c['vp'])} |",
         f"| VP timestamp | {rate(c['vp_timestamp'], c['vp'])} |",
-        f"| VP współrzędne | {rate(c['vp_position'], c['vp'])} |",
-        f"| VP jawny current_status | {rate(c['vp_status'], c['vp'])} |",
+        f"| VP coordinates | {rate(c['vp_position'], c['vp'])} |",
+        f"| VP explicit current_status | {rate(c['vp_status'], c['vp'])} |",
         f"| VP STOPPED_AT | {rate(c['vp_stopped'], c['vp'])} |",
-        f"| VP sekwencja i ewentualny stop_id zgodne z kursem | {rate(c['vp_sequence_match'], c['vp_sequence_checked'])} |",
-        f"| VP niezgodność: stop_id wskazuje sekwencję +1 | {c['vp_stop_next']} |",
+        f"| VP sequence and optional stop_id consistent with the trip | {rate(c['vp_sequence_match'], c['vp_sequence_checked'])} |",
+        f"| VP mismatch: stop_id points to sequence +1 | {c['vp_stop_next']} |",
         f"| TripUpdate | {c['tu']} |",
         f"| TU trip.trip_id | {rate(c['tu_trip_id'], c['tu'])} |",
         f"| TU trip.start_date | {rate(c['tu_start_date'], c['tu'])} |",
@@ -581,48 +581,48 @@ def report(args):
         f"| STU arrival.time | {rate(c['arrival_time'], c['stu'])} |",
         f"| STU arrival.delay | {rate(c['arrival_delay'], c['stu'])} |",
         f"| STU arrival.uncertainty | {rate(c['arrival_uncertainty'], c['stu'])} |",
-        f"| STU arrival.uncertainty = 0 (jawne) | {rate(c['arrival_uncertainty_zero'], c['stu'])} |",
+        f"| STU arrival.uncertainty = 0 (explicit) | {rate(c['arrival_uncertainty_zero'], c['stu'])} |",
         f"| STU departure.time | {rate(c['departure_time'], c['stu'])} |",
         f"| STU departure.delay | {rate(c['departure_delay'], c['stu'])} |",
-        f"| STU arrival.time w przeszłości względem pobrania | {rate(c['past_arrival_time'], c['arrival_time'])} |",
-        f"| STU z czasem zdarzenia w przeszłości (time lub rozkład + delay) | {rate(c['past_stu'], c['past_stu_evaluable'])} |",
+        f"| STU arrival.time earlier than fetch time | {rate(c['past_arrival_time'], c['arrival_time'])} |",
+        f"| STU with a past event time (time or schedule + delay) | {rate(c['past_stu'], c['past_stu_evaluable'])} |",
         f"| TripUpdate CANCELED | {c['canceled']} |",
         f"| STU SKIPPED | {c['skipped']} |",
         f"| STU NO_DATA | {c['no_data']} |",
-        f"| Czasy zdarzeń ≤0 (pomijane w analizie czasów) | {c['nonpositive_event_time']} |",
+        f"| Event times ≤0 (excluded from time analysis) | {c['nonpositive_event_time']} |",
         f"| ServiceAlert | {c['alerts']} |",
         "",
-        f"Alert effect=NO_SERVICE: {c['no_service_alerts']} wystąpień.",
+        f"Alert effect=NO_SERVICE: {c['no_service_alerts']} occurrences.",
         "",
-        "## Zgodność identyfikatorów z ZIP",
+        "## Identifier matching against the ZIP",
         "",
-        "Sprawdzane są niepuste identyfikatory w VP, TU, STU i Alert.informed_entity. Powtórzenia między próbkami pozostają w mianowniku. Jawny route_id w deskryptorze kursu musi też odpowiadać trasie tego trip_id w ZIP.",
+        "Nonempty identifiers in VP, TU, STU, and Alert.informed_entity are checked. Repeated occurrences across snapshots remain in the denominator. An explicit route_id in a trip descriptor must also match the route assigned to that trip_id in the ZIP.",
         "",
-        "| Identyfikator | Zgodne wystąpienia | Unikalne wartości | Przykłady niezgodnych |",
+        "| Identifier | Matching occurrences | Unique values | Mismatch examples |",
         "| --- | ---: | ---: | --- |",
         f"| trip_id | {rate(c['trip_match'], c['trip_checked'])} | {len(unique['trip'])} | {examples_line('trip')} |",
         f"| route_id | {rate(c['route_match'], c['route_checked'])} | {len(unique['route'])} | {examples_line('route')} |",
         f"| stop_id | {rate(c['stop_match'], c['stop_checked'])} | {len(unique['stop'])} | {examples_line('stop')} |",
-        f"| para trip_id/stop_id w stop_times | {rate(c['trip_stop_match'], c['trip_stop_checked'])} | — | {examples_line('trip_stop')} |",
+        f"| trip_id/stop_id pair in stop_times | {rate(c['trip_stop_match'], c['trip_stop_checked'])} | — | {examples_line('trip_stop')} |",
         "",
-        f"Jawne `stop_sequence` dopasowane do `(trip_id, stop_sequence)` w GTFS: {rate(c['sequence_match'], c['sequence_checked'])}. Niedopasowania: {examples_line('sequence')}; {c['sequence_beyond_end']} wystąpień ma sekwencję większą od ostatniej w GTFS. Jawne `stop_id` zgodne z przystankiem wyznaczonym przez `stop_sequence`: {rate(c['sequence_stop_match'], c['sequence_stop_checked'])}.",
+        f"Explicit `stop_sequence` matched to `(trip_id, stop_sequence)` in GTFS: {rate(c['sequence_match'], c['sequence_checked'])}. Mismatches: {examples_line('sequence')}; {c['sequence_beyond_end']} occurrences have a sequence beyond the final stop in GTFS. Explicit `stop_id` consistent with the stop resolved through `stop_sequence`: {rate(c['sequence_stop_match'], c['sequence_stop_checked'])}.",
         "",
-        "Uwaga: `route_id` i `stop_id` są mierzone tylko gdy występują jawnie w GTFS-RT. `stop_sequence` nie jest `stop_id`; dopasowanie sekwencji identyfikuje przystanek pośrednio, ale nie testuje przesłanego `stop_id`.",
+        "Note: `route_id` and `stop_id` are checked only when explicitly present in GTFS-RT. `stop_sequence` is not `stop_id`; sequence matching identifies a stop indirectly but does not validate the supplied `stop_id`.",
         "",
-        "## Świeżość",
+        "## Freshness",
         "",
-        "| Timestamp | Wynik |",
+        "| Timestamp | Result |",
         "| --- | --- |",
         f"| VehiclePosition.timestamp | {age_stats(vp_ages)} |",
         f"| TripUpdate.timestamp | {age_stats(tu_ages)} |",
         "",
-        "Próg 90 s: [GTFS Realtime Best Practices](https://gtfs.org/documentation/realtime/realtime-best-practices/). Wiek liczony od chwili pobrania; pomiary ujemne oznaczają różnicę zegarów.",
+        "90 s threshold: [GTFS Realtime Best Practices](https://gtfs.org/documentation/realtime/realtime-best-practices/). Age is measured at fetch time; negative values indicate clock differences.",
         "",
     ]
     lines += [
-        "## Strumienie i kompletność próby",
+        "## Streams and sample completeness",
         "",
-        "| Źródło RT | Pliki poprawne | Puste | Wiek nagłówka |",
+        "| Realtime source | Valid files | Empty | Header age |",
         "| --- | ---: | ---: | --- |",
     ]
     rt_urls = meta.get("rt_urls", [meta.get("rt_url", "legacy")])
@@ -638,76 +638,76 @@ def report(args):
     if "rt_urls" in meta:
         for index, url in enumerate(rt_urls):
             if str(index) not in stream_counts:
-                lines.append(f"| {url} | 0 | — | brak poprawnych próbek |")
+                lines.append(f"| {url} | 0 | — | no valid snapshots |")
     error_path = source / "errors.jsonl"
     error_count = (
         len(error_path.read_text().splitlines()) if error_path.exists() else None
     )
     lines += [
         "",
-        f"Błędy pobierania zapisane w errors.jsonl: {error_count if error_count is not None else 'brak dziennika; sprawdź log kolektora'}. Nieudane pobrania nie trafiają do mianowników obecności pól.",
+        f"Fetch errors recorded in errors.jsonl: {error_count if error_count is not None else 'no error journal; check the collector log'}. Failed fetches are excluded from field presence denominators.",
     ]
     lines += [
         "",
-        "Próg 90 s służy ocenie VP/TU; dla alertów zalecenie GTFS wynosi 10 minut. Brak plików danego źródła oznacza brak danych, nie pusty feed.",
-        f"Niepoprawne protobuf: {c['invalid']}; migawki DIFFERENTIAL: {c['differential']} (raport zlicza przesłane rekordy, nie odtwarza stanu różnicowego).",
+        "The 90 s threshold applies to VP/TU; the GTFS recommendation for alerts is 10 minutes. Missing source files indicate missing data, not an empty feed.",
+        f"Invalid protobuf: {c['invalid']}; DIFFERENTIAL snapshots: {c['differential']} (the report counts supplied records without reconstructing differential state).",
         "",
-        "## Historia i przydatność do założeń",
+        "## History and suitability for the project",
         "",
-        f"Zmiany arrival.time pomiędzy kolejnymi obserwacjami tego samego kursu/przystanku: {rate(c['arrival_revised'], c['arrival_repeated'])}. Zmiany czasu, który już w poprzedniej próbce był przeszły: {rate(c['arrival_past_revised'], c['arrival_past_repeated'])}.",
+        f"Changes in arrival.time between consecutive observations of the same trip/stop: {rate(c['arrival_revised'], c['arrival_repeated'])}. Revisions of a time that was already in the past in the previous snapshot: {rate(c['arrival_past_revised'], c['arrival_past_repeated'])}.",
         "",
-        f"Świeże VP z postępem stop_sequence: {c['vp_sequence_advance']}; przejścia IN_TRANSIT_TO/INCOMING_AT → STOPPED_AT dla tego samego przystanku: {len(arrival_intervals)}.",
+        f"Fresh VP observations with advancing stop_sequence: {c['vp_sequence_advance']}; IN_TRANSIT_TO/INCOMING_AT → STOPPED_AT transitions for the same stop: {len(arrival_intervals)}.",
     ]
     if arrival_intervals:
         lines.append(
-            f"Odstęp timestampów przy tych przejściach: mediana {sorted(arrival_intervals)[len(arrival_intervals) // 2]} s; maksimum {max(arrival_intervals)} s. To kandydaci na przedział przyjazdu według stanu pojazdu, wymagający walidacji GPS i semantyki wydawcy."
+            f"Timestamp gap at these transitions: median {sorted(arrival_intervals)[len(arrival_intervals) // 2]} s; maximum {max(arrival_intervals)} s. These are candidate arrival windows based on vehicle states; GPS and provider semantics require validation."
         )
         lines.append(
-            f"GPS przy przejściu do STOPPED_AT dostępny dla {len(arrival_distances)}/{len(arrival_intervals)} kandydatów; odległość od przystanku ≤50 m: {rate(sum(d <= 50 for d in arrival_distances), len(arrival_distances))}. Próg 50 m jest roboczym testem spójności lokalizacji, nie potwierdzeniem dokładnej chwili przyjazdu."
+            f"GPS at transition to STOPPED_AT available for {len(arrival_distances)}/{len(arrival_intervals)} candidates; distance from stop ≤50 m: {rate(sum(d <= 50 for d in arrival_distances), len(arrival_distances))}. The 50 m threshold is a provisional location consistency check, not confirmation of an exact arrival time."
         )
         if arrival_distances:
             lines.append(
-                f"Odległość GPS od przystanku: mediana {sorted(arrival_distances)[len(arrival_distances) // 2]:.0f} m; maksimum {max(arrival_distances):.0f} m."
+                f"GPS distance from stop: median {sorted(arrival_distances)[len(arrival_distances) // 2]:.0f} m; maximum {max(arrival_distances):.0f} m."
             )
     if delays:
         lines += [
             "",
-            f"Jawne arrival.delay: minimum {min(delays)} s, mediana {sorted(delays)[len(delays) // 2]} s, maksimum {max(delays)} s. To aktualizacje z feedu (także prognozy), a nie rozkład faktycznych opóźnień przejazdów.",
+            f"Explicit arrival.delay: minimum {min(delays)} s, median {sorted(delays)[len(delays) // 2]} s, maximum {max(delays)} s. These are feed updates (including predictions), not a distribution of actual trip delays.",
         ]
     lines += [
         "",
-        "Przejścia VP uwzględniają tylko dopasowane do ZIP sekwencje i stop_id, jawny status i timestamp, wiek 0–90 s oraz odstęp 0–90 s. Historia jest rozdzielona po źródle, kursie, pojeździe (VP) i dacie; przy braku start_date użyto lokalnej daty obserwacji wyłącznie do grupowania, nie do wyznaczania czasu rozkładowego. Przejazdy przez północ wymagają osobnej walidacji.",
+        "VP transitions require ZIP-matched sequences and stop_id, explicit status and timestamp, age 0–90 s, and gap 0–90 s. History is separated by source, trip, vehicle (VP), and date; when start_date is absent, the local observation date is used only for grouping, not for computing scheduled times. Trips crossing midnight require separate validation.",
         "",
-        "## Czy można liczyć actual arrival?",
+        "## Can actual arrivals be determined?",
         "",
     ]
     if c["arrival_time"] == 0:
         lines.append(
-            "W tej próbce GTFS-RT nie dostarcza `arrival.time`. Jeśli jest dostępne `arrival.delay`, można wyliczyć czas po połączeniu z rozkładem i datą kursu; nie odróżnia to prognozy od pomiaru. Można próbować oszacować actual arrival z historii pozycji i statusu pojazdu, z niepewnością wymagającą walidacji."
+            "This GTFS-RT sample does not provide `arrival.time`. If `arrival.delay` is available, a time can be derived by matching the schedule and service date; this does not distinguish a prediction from a measurement. Actual arrivals may be estimated from vehicle position and state history, with uncertainty that requires validation."
         )
     else:
         lines.append(
-            "`arrival.time` występuje w próbkach, lecz GTFS-RT może podawać prognozę również dla przeszłych przystanków. Obecność pola i jego przeszły czas nie dowodzą, że jest to potwierdzony actual arrival. Do tej interpretacji potrzebna jest analiza zmian kolejnych próbek i walidacja względem przejazdów."
+            "`arrival.time` is present in the snapshots, but GTFS-RT may provide predictions even for past stops. The presence of the field and a past timestamp do not establish a confirmed actual arrival. This interpretation requires examining changes across snapshots and validating against observed trips."
         )
     lines += [
         "",
-        "Brak `uncertainty` oznacza nieznaną niepewność, zgodnie ze [specyfikacją GTFS-RT](https://gtfs.org/documentation/realtime/reference/). Anulowanie można potwierdzić jawnym CANCELED; zniknięcie kursu z feedu nie potwierdza anulowania. SKIPPED dotyczy przystanku, a NO_SERVICE należy interpretować w zakresie selektora alertu.",
+        "Missing `uncertainty` means unknown uncertainty under the [GTFS-RT specification](https://gtfs.org/documentation/realtime/reference/). Explicit CANCELED reports a cancellation; a trip disappearing from the feed does not establish cancellation. SKIPPED applies to a stop, and NO_SERVICE must be interpreted within the alert selector scope.",
     ]
     if duration < 2:
         lines += [
             "",
-            f"**Ograniczenie próby:** okno {duration:.2f} h jest krótsze niż zakładane kilka godzin / dzień. Wnioski o rzadkich zdarzeniach (anulowania, przeszłe aktualizacje) są wstępne; uruchom kolektor ponownie z `--hours 4` lub dłużej i wygeneruj raport ponownie.",
+            f"**Sample limitation:** the window of {duration:.2f} h is shorter than the intended several hours / full day. Findings about rare events (cancellations, past updates) are preliminary; run the collector again with `--hours 4` or longer and regenerate the report.",
         ]
     if c["sequence_beyond_end"]:
         lines += [
             "",
-            "W próbkach pojawia się `stop_sequence` po ostatnim przystanku kursu w ZIP. Zmiany sekwencji trzeba filtrować względem `stop_times.txt` przed użyciem ich do szacowania przyjazdu.",
+            "The snapshots contain `stop_sequence` values beyond the final stop of the trip in the ZIP. Filter sequence changes against `stop_times.txt` before using them for arrival estimation.",
         ]
     lines += [
         "",
-        "## Metoda",
+        "## Method",
         "",
-        "Każdy plik `.pb` jest osobną migawką pobraną z pełnego feedu. Procenty dotyczą obserwacji, dlatego ten sam pojazd może być liczony wielokrotnie. Przeszła aktualizacja ma `arrival.time` lub `departure.time`, ewentualnie lokalną godzinę z `stop_times.txt` dla `start_date` + odpowiedni `delay`, wcześniejszą od pobrania. Jeśli istnieją oba zdarzenia, analizowane jest przybycie. Ta klasyfikacja nie potwierdza faktycznego przyjazdu. Brak CANCELED w próbie nie dowodzi, że feed nigdy nie publikuje anulowań.",
+        "Each `.pb` file is a separate snapshot downloaded from the full feed. Percentages describe observations, so the same vehicle may be counted repeatedly. A past update has `arrival.time` or `departure.time`, or a local `stop_times.txt` time for `start_date` plus the corresponding `delay`, earlier than the fetch time. When both events are available, arrival is analyzed. This classification does not confirm an actual arrival. No CANCELED updates in the sample does not prove that the feed never publishes cancellations.",
         "",
     ]
     args.output.write_text("\n".join(lines), encoding="utf-8")
@@ -754,7 +754,7 @@ def main():
         "--network",
         choices=NETWORKS,
         default="T",
-        help="Kraków: T tramwaje, A autobusy MPK, M Mobilis",
+        help="Kraków: T trams, A MPK buses, M Mobilis",
     )
     collect_parser.add_argument("--gtfs-url")
     collect_parser.add_argument(

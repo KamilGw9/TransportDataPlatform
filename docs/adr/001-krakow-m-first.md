@@ -5,32 +5,31 @@ Date: 2026-09-27
 
 ## Context
 
-Wcześniej analizowano Rzeszów. W badanej próbce feedu RT brakowało
-`arrival.time` i jawnego `current_status`, a `arrival.delay` oraz
-`departure.delay` miały jednakowe wartości. Ograniczało to możliwość
-rozróżniania przyjazdów i odjazdów oraz szacowania momentu przyjazdu.
-Wykryte zdarzenia nie stanowiły potwierdzonych przyjazdów.
+Rzeszów was investigated first. In the sampled realtime feed, `arrival.time` and
+explicit `current_status` were absent, while `arrival.delay` and `departure.delay`
+had identical values. This limited our ability to distinguish arrivals from
+departures and estimate arrival times. Detected events were not confirmed arrivals.
 
-Następnie zbadano krakowskie feedy A (autobusy MPK), M (Mobilis) i T (tramwaje).
-W około dziesięciominutowej próbie M miał pełne timestampy TripUpdates
-oraz spójne identyfikatory przystanków i sekwencje VehiclePositions.
-Znaleziono 158 kandydatów przejścia do `STOPPED_AT`, wszystkie z GPS
-w odległości do 50 m od przystanku. To podstawa do dalszego badania
-przedziałów przyjazdu; dokładność metody pozostaje niezweryfikowana.
+We then profiled the Kraków feeds: A (MPK buses), M (Mobilis), and T (trams).
+In the roughly ten-minute sample, M had timestamps on all TripUpdates and
+consistent stop identifiers and sequences in VehiclePositions. We found 158
+candidate transitions to `STOPPED_AT`, all with GPS positions within 50 m of the
+stop. This supports further investigation of arrival windows; the method's
+accuracy remains unvalidated.
 
-Porównanie: [wyniki profilowania A/M/T](../../tools/feed_profiler/data-profile.md).
+Comparison: [A/M/T profiling findings](../../tools/feed_profiler/data-profile.md).
 
 ## Decision
 
-Pierwszy przepływ danych budujemy dla Krakowa, zaczynając od `krakow_ztp_m`.
-Rozważone źródła to Rzeszów oraz krakowskie A/M/T. M wybieramy ze względu
-na spójność pól w badanej próbie. Dodanie A i T odkładamy do rozszerzenia.
+Build the first data pipeline for Kraków, starting with `krakow_ztp_m`.
+The alternatives considered were Rzeszów and the Kraków A/M/T feeds. We choose
+M because of its field consistency in the sample. Add A and T in a later extension.
 
 ## Consequences
 
-- Identyfikatory od początku uwzględniają `source_id`.
-- Wybór M wymaga potwierdzenia dłuższą obserwacją, w tym kursów nocnych.
-- `arrival.time` zachowujemy jako czas raportowany przez dostawcę;
-  sama obecność pola nie rozstrzyga, czy jest prognozą, czy pomiarem.
-- Ze zmian stanów pojazdu możemy wyznaczać kandydatów przedziałów przyjazdu.
-  Osobnej walidacji wymagają timestampy, GPS i sposób raportowania stanów.
+- Include `source_id` in identifier namespaces from the start.
+- Validate the choice of M through longer observation, including overnight trips.
+- Retain `arrival.time` as the provider-reported time; the field's presence alone
+  does not establish whether it is a prediction or a measurement.
+- Vehicle state transitions can yield candidate arrival windows. Timestamps,
+  GPS positions, and the provider's state reporting require separate validation.

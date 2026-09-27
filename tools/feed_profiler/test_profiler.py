@@ -116,13 +116,13 @@ class KrakowTest(unittest.TestCase):
             report(argparse.Namespace(input=target, output=output))
             content = output.read_text()
             self.assertIn(
-                "STU z czasem zdarzenia w przeszłości (time lub rozkład + delay) | 2/2 (100.0%)",
+                "STU with a past event time (time or schedule + delay) | 2/2 (100.0%)",
                 content,
             )
             self.assertIn(
-                "już w poprzedniej próbce był przeszły: 1/1 (100.0%)", content
+                "already in the past in the previous snapshot: 1/1 (100.0%)", content
             )
-            self.assertIn("Czasy zdarzeń ≤0 (pomijane w analizie czasów) | 2", content)
+            self.assertIn("Event times ≤0 (excluded from time analysis) | 2", content)
 
     def test_arrival_candidates_require_fresh_matching_vehicle_states(self):
         for stop_id, age, expected in (("s1", 5, 1), ("s2", 5, 0), ("s1", 120, 0)):
@@ -156,12 +156,12 @@ class KrakowTest(unittest.TestCase):
                 output = target / "report.md"
                 report(argparse.Namespace(input=target, output=output))
                 self.assertIn(
-                    f"STOPPED_AT dla tego samego przystanku: {expected}.",
+                    f"STOPPED_AT transitions for the same stop: {expected}.",
                     output.read_text(),
                 )
                 if expected:
                     self.assertIn(
-                        "odległość od przystanku ≤50 m: 1/1 (100.0%)",
+                        "distance from stop ≤50 m: 1/1 (100.0%)",
                         output.read_text(),
                     )
 
@@ -209,14 +209,14 @@ class ReportTest(unittest.TestCase):
             report(argparse.Namespace(input=source, output=output))
             content = output.read_text()
             self.assertIn(
-                "STU z czasem zdarzenia w przeszłości (time lub rozkład + delay) | 1/1 (100.0%)",
+                "STU with a past event time (time or schedule + delay) | 1/1 (100.0%)",
                 content,
             )
             self.assertIn("TripUpdate CANCELED | 1", content)
             self.assertIn("| trip_id | 3/3 (100.0%)", content)
             self.assertIn("| route_id | 0/1 (0.0%)", content)
             self.assertIn("| stop_id | 1/2 (50.0%)", content)
-            self.assertIn("stop_sequence` dopasowane", content)
+            self.assertIn("stop_sequence` matched", content)
 
 
 if __name__ == "__main__":

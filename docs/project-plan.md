@@ -1,33 +1,33 @@
-# Plan projektu
+# Project plan
 
-Platforma danych transportu miejskiego dla Krakowa. Celem jest gromadzenie
-historii GTFS i GTFS-Realtime oraz udostępnianie analiz prognozowanych opóźnień,
-pokrycia kursów danymi RT i jakości źródeł.
+An urban transport data platform for Kraków. The goal is to collect GTFS and
+GTFS-Realtime history and provide analysis of predicted delays, realtime trip
+coverage, and source data quality.
 
-## Pierwszy zakres
+## Initial scope
 
-Zaczynamy od autobusów Mobilis (`krakow_ztp_m`). Pierwszy działający przepływ
-obejmie pobranie rozkładu i migawek RT, zachowanie oryginalnych danych,
-normalizację, zapytania SQL oraz podstawowy dashboard.
+Start with Mobilis buses (`krakow_ztp_m`). The first working pipeline will download
+schedules and realtime snapshots, retain the original data, normalize records,
+and expose SQL queries and a basic dashboard.
 
-## Kolejność prac
+## Implementation sequence
 
-1. Przygotować odtwarzalne środowisko Python, minimalne CLI, testy i CI.
-2. Uruchomić lokalnie PostgreSQL i MinIO z trwałym zapisem danych.
-3. Zbudować archiwizację GTFS/RT z rejestrem pobrań i wydłużyć obserwację Mobilisu.
-4. Wdrożyć walidację, dopasowanie RT do rozkładu i podstawowe modele analityczne.
-5. Udostępnić dashboard prognozowanych opóźnień, pokrycia i świeżości danych.
+1. Set up a reproducible Python environment, a minimal CLI, tests, and CI.
+2. Run PostgreSQL and MinIO locally with persistent storage.
+3. Archive GTFS/RT with fetch records and extend the Mobilis observation period.
+4. Implement validation, realtime-to-schedule matching, and basic analytical models.
+5. Provide a dashboard for predicted delays, coverage, and data freshness.
 
-Po pierwszym działającym przepływie planowane są orkiestracja Airflow,
-przetwarzanie strumieniowe Kafka, historia RT w ClickHouse oraz monitoring
-i odtwarzanie wyników z archiwum. Pogoda, feedy A/T i AWS to dalsze rozszerzenia.
+After the first working pipeline, planned additions include Airflow orchestration,
+Kafka streaming, realtime history in ClickHouse, monitoring, and replay from the
+archive. Weather, A/T feeds, and AWS are later extensions.
 
-## Założenia
+## Principles
 
-- Zachowujemy oryginalne dane, aby móc ponownie przeliczać wyniki.
-- Rozróżniamy prognozowany czas przyjazdu i przedział szacowany ze stanów pojazdu.
-- Dokładność szacowania przyjazdów wymaga osobnej walidacji.
-- Technologie i źródła dodajemy etapami; powyższa lista opisuje planowane prace.
+- Retain original data so that results can be recomputed.
+- Distinguish predicted arrival times from windows estimated using vehicle states.
+- Validate arrival estimation accuracy separately.
+- Introduce technologies and sources incrementally; the list above describes planned work.
 
-Aktualne wykonanie opisuje [status projektu](project-status.md),
-a wybór źródła — [ADR 001](adr/001-krakow-m-first.md).
+See [project status](project-status.md) for implementation progress and
+[ADR 001](adr/001-krakow-m-first.md) for the source selection decision.
