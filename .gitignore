@@ -1,0 +1,13 @@
+data/
+__pycache__/
+/venv/
+/.venv/
+.env
+.env.*
+!.env.example
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.codex
+.agents
+URBAN_MOBILITY_PROJECT_PLAN.md
