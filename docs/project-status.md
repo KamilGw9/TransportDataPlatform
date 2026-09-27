@@ -1,23 +1,24 @@
-# Stan projektu
+# Project status
 
-Ostatnia aktualizacja: 2026-09-27.
+Last updated: 2026-09-27.
 
-- Bieżący etap: 0 — rozpoznanie repozytorium i wybór źródła; przegląd wykonany.
-- Istnieją: profiler GTFS/GTFS-RT, jego testy oraz [raporty A/M/T](../tools/feed_profiler/data-profile.md).
-- Dane lokalne: ZIP i PB w `tools/feed_profiler/data/` (poza Git).
-- Weryfikacja: hashe ZIP zgodne z `sources.json` i zachowanymi raportami;
-  liczba PB: A=55, M=66, T=66.
-- Odtworzenie raportów A/M/T z lokalnych ZIP/PB: wyniki identyczne z zapisanymi
-  raportami po pominięciu czasu wygenerowania.
-- Testy: `venv/bin/python -m unittest discover -s tools/feed_profiler -v`
-  — 5 testów zakończonych powodzeniem, bez pobierania danych z sieci.
-- Pierwsze źródło: `krakow_ztp_m` — autobusy Mobilis;
-  [uzasadnienie zmiany miasta i wyboru feedu](adr/001-krakow-m-first.md).
-- Brakuje: szkieletu aplikacji Python, lockfile, CI oraz konfiguracji
-  PostgreSQL i MinIO w repozytorium.
-- Ograniczenia: profiler służy do wstępnego badania danych; nie realizuje jeszcze
-  pełnej archiwizacji RAW ani rejestru wszystkich prób HTTP. Krótka próbka
-  nie weryfikuje zachowania w nocy i podczas zmiany czasu.
-- Otwarte kwestie: dłuższa obserwacja M, zgodność time/delay, ustalanie dnia
-  kursowania, interpretacja stanów pojazdu i dokładność estymacji przyjazdów.
-- Następne zadanie: etap 1 — odtwarzalne środowisko Python i minimalne CLI.
+- Current stage: 1 — Python scaffold and quality tooling; in progress.
+- Implemented: the `mobility` package, CLI, uv configuration, lockfile, Ruff,
+  pytest, and the GTFS/GTFS-RT profiler with [A/M/T reports](../tools/feed_profiler/data-profile.md).
+- Verification: CLI help and version work; Ruff lint and formatting checks pass;
+  `uv run pytest` passes all 5 tests without fetching live data.
+- Local data: ZIP and PB files in `tools/feed_profiler/data/` (excluded from Git).
+- Data verification: ZIP hashes match `sources.json` and the archived reports;
+  PB counts: A=55, M=66, T=66.
+- Report reproducibility: English A/M/T reports reproduced from local ZIP/PB files
+  match the archived reports after normalizing generation timestamps and historical
+  source labels. Translation preserved every reported number and source URL.
+- Initial source: `krakow_ztp_m` — Mobilis buses;
+  see the [city and feed selection decision](adr/001-krakow-m-first.md).
+- Still missing: CI and repository configuration for PostgreSQL and MinIO.
+- Limitations: the profiler is an exploratory tool. It does not yet provide full
+  RAW archiving or a registry of every HTTP attempt. The short sample does not
+  validate overnight service or daylight saving time transitions.
+- Open questions: longer observation of M, time/delay consistency, service date
+  resolution, vehicle state interpretation, and arrival estimation accuracy.
+- Next task: CI running quality checks and tests.
