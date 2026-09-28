@@ -5,39 +5,39 @@ on:
   pull_request:
   workflow_dispatch:
 
-premission:
+permissions:
   contents: read
-  
+  actions: read
 jobs:
   quality:
     name: Python quality checks
     timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+            - name: Check out repository
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-steps:
-        - name: Check out repository
-          uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+            - name: Install uv
+              uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+              with:
+                version: "0.11.7"
 
-        - name: Install uv
-          uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
-          with:
-            version: "0.11.7"
+            - name: Install Python
+              run: uv python install
 
-        - name: Install Python
-          run: uv python install
+            - name: Install dependencies
+              run: uv sync --locked --dev
 
-        - name: Install dependencies
-          run: uv sync --locked --dev
+            - name: Check lint
+              run: uv run --locked ruff check src/ tools/feed_profiler/
 
-        - name: Check lint
-          run: uv run --locked ruff check src/ tools/feed_profiler/
+            - name: Check formatting
+              run: uv run --locked ruff format --check src/ tools/feed_profiler/
 
-        - name: Check formatting
-          run: uv run --locked ruff format --check src/ tools/feed_profiler/
+            - name: Run tests
+              run: uv run --locked pytest
 
-        - name: Run tests
-          run: uv run --locked pytest
-
-        - name: Check CLI
-          run: |
-            uv run --locked mobility --help
-            uv run --locked mobility --version
+            - name: Check CLI
+              run: |
+                uv run --locked mobility --help
+                uv run --locked mobility --version
