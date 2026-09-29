@@ -13,6 +13,21 @@ states still requires validation.
 - [Project plan](docs/project-plan.md)
 - [Current status](docs/project-status.md)
 - [Why Kraków and Mobilis](docs/adr/001-krakow-m-first.md)
+- [Local PostgreSQL and S3 storage](docs/local-development.md)
+
+## Local infrastructure
+
+```bash
+make setup
+make up
+make check-infra
+```
+
+PostgreSQL is available at `127.0.0.1:5432`; the S3 endpoint is
+`http://127.0.0.1:9000`, with a console at `http://127.0.0.1:9001`.
+Credentials are in the ignored `.env`. `make down` retains database and object
+volumes. The first MinIO source build takes several minutes; see the
+[local setup and lifecycle notes](docs/local-development.md).
 
 ## Development environment
 
