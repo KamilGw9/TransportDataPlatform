@@ -31,5 +31,5 @@ dev = [
   select = ["E4", "E7", "E9", "F", "I"]
 
   [tool.pytest.ini_options]
-  testpaths = ["tools/feed_profiler"]
+  testpaths = ["tools/feed_profiler", "tests"]
   addopts = "--strict-config --strict-markers"
