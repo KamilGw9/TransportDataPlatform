@@ -1,7 +1,7 @@
 # Local PostgreSQL and S3 storage
 
-This stage supplies storage for the future ingestion pipeline. It does not download
-GTFS or create transport-domain tables. Requirements: Docker with Compose v2,
+This stage supplies storage for the ingestion pipeline. It does not create
+transport-domain tables. Requirements: Docker with Compose v2,
 GNU Make, Python 3, and uv for Python quality checks. Run commands from the repository
 root. Docker Desktop users must enable integration with their WSL distribution.
 
@@ -60,7 +60,7 @@ The initial SQL only runs on a new empty PostgreSQL volume. Changes to init SQL 
 and password changes once data exists.
 
 S3 defaults to bucket `mobility`, region `us-east-1`, path-style addressing.
-For the future local Python collector, the access key is `MINIO_ROOT_USER`, the
+For the local Python collector, the access key is `MINIO_ROOT_USER`, the
 secret key is `MINIO_ROOT_PASSWORD`, and the endpoint is the host S3 URL above.
 These are development administrator credentials; application-scoped credentials
 are required before sharing or deploying this environment.
@@ -80,6 +80,20 @@ failure is best-effort; remaining probes use `infra_` names or
 `_infrastructure_checks/` object keys.
 
 Expected result: `PASS: all schemas exist; SQL row and S3 object survived container recreation.`
+
+## Archive the GTFS schedule
+
+```bash
+set -a; source .env; set +a
+uv run python -m mobility.ingestion.gtfs
+```
+
+The script needs `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` in the environment;
+`MINIO_API_PORT`, `S3_REGION` and `S3_BUCKET` default to `9000`, `us-east-1` and
+`mobility`. It downloads `GTFS_KRK_M.zip`, rejects invalid ZIP data and stores the
+exact bytes under `raw/gtfs/source_id=krakow_ztp_m/sha256=<hash>/schedule.zip`.
+Running it again with an unchanged feed skips the upload. Objects can be inspected
+in the MinIO console.
 
 ## Troubleshooting
 

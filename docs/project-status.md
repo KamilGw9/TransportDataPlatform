@@ -1,12 +1,21 @@
 # Project status
 
-Last updated: 2026-09-29.
+Last updated: 2026-09-30.
 
-- Current stage: 2 — local PostgreSQL and S3 storage; verified locally.
+- Current stage: 3 — GTFS/RT archiving with fetch records; in progress.
+  Stage 2 (local PostgreSQL and S3 storage) is complete.
 - Implemented: the `mobility` package, CLI, uv configuration, lockfile, Ruff,
   pytest, and the GTFS/GTFS-RT profiler with [A/M/T reports](../tools/feed_profiler/data-profile.md).
+- RAW schedule archiving: `mobility.ingestion.gtfs` downloads `GTFS_KRK_M.zip`,
+  rejects payloads that are not a valid ZIP (HTML pages, truncated downloads, CRC
+  errors), computes the SHA-256 of the exact bytes and stores them under
+  `raw/gtfs/source_id=krakow_ztp_m/sha256=<hash>/schedule.zip` in the `mobility`
+  bucket. An existing key is not rewritten, so repeated runs are idempotent;
+  S3 errors other than a missing object are propagated.
 - Verification: CLI help and version work; `make lint` and `make test` pass
-  (7 Python tests, including local credential preservation and repeatable setup).
+  (23 Python tests). Ingestion tests use simulated HTTP responses and a fake S3
+  client. A manual run against local MinIO stored the object and a repeated run
+  skipped it.
 - Local data: ZIP and PB files in `tools/feed_profiler/data/` (excluded from Git).
 - Data verification: ZIP hashes match `sources.json` and the archived reports;
   PB counts: A=55, M=66, T=66.
@@ -26,20 +35,20 @@ Last updated: 2026-09-29.
   with status 1, rather than reporting success. Repeated valid initialization passes.
 - Tooling: `make setup/up/down/ps/logs/postgres/check-infra/test/lint` and
   [local setup instructions](local-development.md) are available.
-- CI: copied the previously green workflow from `ci/python-quality-checks` into
-  this infrastructure branch and included new Python paths and Compose/shell
-  validation. These checks pass locally; this updated workflow has not been pushed
-  or verified by GitHub Actions in this session.
+- CI: the workflow runs Python quality checks and Compose/shell validation.
 - Storage decision: see [ADR 002](adr/002-local-storage.md). MinIO Community is
   archived; it is used only for local S3-compatible learning. The server includes
   the October 2025 security release, built from pinned sources. Reassess the service
   before shared or cloud deployment.
-- Limitations: the profiler is an exploratory tool. It does not yet provide full
-  RAW archiving or a registry of every HTTP attempt. The short sample does not
-  validate overnight service or daylight saving time transitions.
+- Limitations: only the Mobilis schedule ZIP is archived; GTFS-RT snapshots are
+  not collected by the platform yet. There is no fetch record or registry of HTTP
+  attempts, so a run that finds an unchanged feed leaves no trace. The ingestion
+  entry point is a module script with a fixed URL and source ID, not a CLI command.
+  The profiler remains an exploratory tool. The short sample does not validate
+  overnight service or daylight saving time transitions.
 - Open questions: longer observation of M, time/delay consistency, service date
   resolution, vehicle state interpretation, and arrival estimation accuracy.
-- Next task (user implementation): download `GTFS_KRK_M.zip`, calculate its SHA-256,
-  and save the exact bytes under `raw/gtfs/source_id=krakow_ztp_m/sha256=<hash>/schedule.zip`
-  in the `mobility` bucket. Then add a fetch record/manifest with URL, time, size and
-  hash. No platform ingestion code or domain tables were added in this stage.
+- Next task (user implementation): add a fetch record with URL, fetch time, size
+  and hash. Decide first whether it is a JSON manifest in S3 or a table in the
+  `metadata` schema, and whether every attempt is recorded or only new files;
+  record the decision in an ADR. No domain tables have been added yet.
