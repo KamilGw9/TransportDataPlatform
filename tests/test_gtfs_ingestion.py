@@ -1,5 +1,8 @@
 """Check GTFS downloads using simulated HTTP responses."""
 
+import io
+import zipfile
+
 import httpx
 import pytest
 from botocore.exceptions import ClientError
@@ -9,6 +12,7 @@ from mobility.ingestion.gtfs import (
     raw_object_key,
     sha256_hex,
     upload_raw,
+    validate_zip,
 )
 
 URL = "https://example.test/schedule.zip"
@@ -51,6 +55,44 @@ def test_fetch_propagates_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
 
         with pytest.raises(httpx.ReadTimeout):
             fetch_data(URL)
+
+
+def make_zip(compression: int = zipfile.ZIP_DEFLATED) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression) as archive:
+        archive.writestr("stops.txt", "stop_id,stop_name\n1,Rondo Mogilskie\n")
+    return buffer.getvalue()
+
+
+def test_validate_zip_accepts_valid_archive() -> None:
+    validate_zip(make_zip())
+
+
+def test_validate_zip_rejects_non_zip_payload() -> None:
+    with pytest.raises(ValueError, match="ZIP"):
+        validate_zip(b"<html>Przerwa techniczna</html>")
+
+
+def test_validate_zip_rejects_truncated_archive() -> None:
+    with pytest.raises(ValueError):
+        validate_zip(make_zip()[:-10])
+
+
+def corrupt_first_member(payload: bytes) -> bytes:
+    corrupted = bytearray(payload)
+    data_start = corrupted.index(b"stops.txt") + len(b"stops.txt")
+    corrupted[data_start] ^= 0xFF
+    return bytes(corrupted)
+
+
+def test_validate_zip_rejects_crc_mismatch() -> None:
+    with pytest.raises(ValueError, match="CRC"):
+        validate_zip(corrupt_first_member(make_zip(zipfile.ZIP_STORED)))
+
+
+def test_validate_zip_rejects_corrupted_compressed_data() -> None:
+    with pytest.raises(ValueError, match="ZIP"):
+        validate_zip(corrupt_first_member(make_zip()))
 
 
 def test_sha256_matches_known_value() -> None:
