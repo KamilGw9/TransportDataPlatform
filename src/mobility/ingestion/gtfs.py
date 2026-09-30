@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 import boto3
 import httpx
 import psycopg
-from botocore.exceptions import BotoCoreError, ClientError
+from botocore.exceptions import ClientError
 
 
 def fetch_data(url: str) -> httpx.Response:
@@ -63,6 +63,14 @@ def upload_raw(client, bucket: str, key: str, data: bytes) -> bool:
     return True
 
 
+def describe_error(error: BaseException) -> str:
+    message = f"{type(error).__name__}: {error}"
+    cause = error.__cause__
+    if cause is not None:
+        message += f" (caused by {type(cause).__name__}: {cause})"
+    return message
+
+
 @dataclass(frozen=True)
 class FetchAttempt:
     source_id: str
@@ -80,6 +88,8 @@ def archive_schedule(client, bucket: str, source_id: str, url: str) -> FetchAtte
     fetched_at = datetime.now(UTC)
     http_status = None
     data = None
+    digest = None
+    key = None
     try:
         response = fetch_data(url)
         http_status = response.status_code
@@ -88,7 +98,8 @@ def archive_schedule(client, bucket: str, source_id: str, url: str) -> FetchAtte
         digest = sha256_hex(data)
         key = raw_object_key(source_id, digest)
         stored = upload_raw(client, bucket, key, data)
-    except (httpx.HTTPError, ValueError, BotoCoreError, ClientError) as e:
+    except Exception as e:
+        # Any failure must still produce a record, so catch everything here.
         if isinstance(e, httpx.HTTPStatusError):
             http_status = e.response.status_code
         return FetchAttempt(
@@ -98,7 +109,9 @@ def archive_schedule(client, bucket: str, source_id: str, url: str) -> FetchAtte
             status="failed",
             http_status=http_status,
             size_bytes=None if data is None else len(data),
-            error=f"{type(e).__name__}: {e}",
+            sha256=digest,
+            object_key=key,
+            error=describe_error(e),
         )
 
     return FetchAttempt(
@@ -139,12 +152,15 @@ def record_attempt(conn, attempt: FetchAttempt) -> None:
 
 
 def connect_postgres() -> psycopg.Connection:
+    # Autocommit: no transaction stays open while the connection waits for the
+    # download and upload; each INSERT is committed immediately.
     return psycopg.connect(
         host="127.0.0.1",
         port=os.environ.get("POSTGRES_PORT", "5432"),
         dbname=os.environ.get("POSTGRES_DB", "mobility"),
         user=os.environ.get("POSTGRES_USER", "mobility"),
         password=os.environ["POSTGRES_PASSWORD"],
+        autocommit=True,
     )
 
 
@@ -154,6 +170,8 @@ if __name__ == "__main__":
     client = make_s3_client()
     bucket = os.environ.get("S3_BUCKET", "mobility")
 
+    # Connect before downloading so an unavailable database fails the run
+    # before anything is uploaded.
     with connect_postgres() as conn:
         print(f"Downloading GTFS from: {url}")
         attempt = archive_schedule(client, bucket, source_id, url)

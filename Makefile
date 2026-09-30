@@ -15,10 +15,7 @@ up:
 	$(MAKE) --no-print-directory migrate
 
 migrate:
-	@for file in infrastructure/docker/postgres/migrations/*.sql; do \
-		echo "Applying $$file"; \
-		$(COMPOSE) exec -T postgres sh -c 'exec psql -v ON_ERROR_STOP=1 -q -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"' < "$$file" || exit 1; \
-	done
+	bash scripts/migrate.sh
 
 down:
 	$(COMPOSE) down

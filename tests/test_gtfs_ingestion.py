@@ -225,18 +225,33 @@ def test_archive_records_invalid_zip(monkeypatch: pytest.MonkeyPatch) -> None:
     assert attempt.size_bytes == len(b"<html>maintenance</html>")
     assert attempt.object_key is None
     assert attempt.error.startswith("ValueError")
+    assert "caused by BadZipFile" in attempt.error
     assert s3.puts == []
 
 
 def test_archive_records_s3_error(monkeypatch: pytest.MonkeyPatch) -> None:
     s3 = FakeS3(head_error_code="403")
+    payload = make_zip()
 
-    with serve(monkeypatch, 200, make_zip()):
+    with serve(monkeypatch, 200, payload):
         attempt = archive_schedule(s3, "bucket", "krakow_ztp_m", URL)
 
     assert attempt.status == "failed"
     assert attempt.error.startswith("ClientError")
-    assert attempt.object_key is None
+    assert attempt.sha256 == sha256_hex(payload)
+    assert attempt.object_key == raw_object_key("krakow_ztp_m", sha256_hex(payload))
+
+
+def test_archive_records_unexpected_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    class BrokenS3(FakeS3):
+        def head_object(self, **kwargs: str) -> dict:
+            raise RuntimeError("unexpected")
+
+    with serve(monkeypatch, 200, make_zip()):
+        attempt = archive_schedule(BrokenS3(), "bucket", "krakow_ztp_m", URL)
+
+    assert attempt.status == "failed"
+    assert attempt.error == "RuntimeError: unexpected"
 
 
 class FakeConnection:

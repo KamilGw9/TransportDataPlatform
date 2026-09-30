@@ -21,18 +21,23 @@ in PostgreSQL.
   (`stored`, `unchanged`, `failed`), HTTP status, size, SHA-256, object key and
   error text.
 - Enforce consistency in the table: failed attempts carry an error; successful
-  attempts carry size, hash and object key.
+  attempts carry size, hash and object key. A failed attempt keeps whatever was
+  already known, such as the hash when only the upload failed.
 - Keep the archived bytes in S3 only; the table references them by object key.
-- Add schema changes as idempotent SQL files in
-  `infrastructure/docker/postgres/migrations/`, applied by `make migrate` (also
-  run by `make up`). `init.sql` stays limited to schemas, because it only runs on
-  an empty volume.
+- Add schema changes as SQL files in `infrastructure/docker/postgres/migrations/`,
+  applied in name order by `make migrate` (also run by `make up`). Each file runs
+  once in a transaction and is recorded with its SHA-256 in
+  `metadata.schema_migrations`; a changed file that was already applied stops the
+  run. `init.sql` stays limited to schemas, because it only runs on an empty volume.
+- Connect to PostgreSQL before downloading, so an unavailable database stops the
+  run before anything is uploaded, and use autocommit so no transaction stays
+  open during the download.
 
 ## Consequences
 
 Questions such as "when did the feed last change" or "how often do downloads fail"
 are answered with SQL. A single S3 object may be referenced by many attempts.
-Ingestion now requires PostgreSQL as well as S3. If the database write fails
-after a successful upload, the object exists without a record; the next run
-records it as `unchanged`. Migrations have no applied-version tracking yet, so each
-file must be safe to repeat; revisit this when a migration cannot be.
+Ingestion now requires PostgreSQL as well as S3. If the database write still
+fails after a successful upload, the object exists without a record and the next
+run records it as `unchanged`, so no `stored` row marks that version. Applied
+migrations must not be edited; changes go into a new file.

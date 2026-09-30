@@ -59,8 +59,10 @@ the configured values. Schemas:
 The initial SQL only runs on a new empty PostgreSQL volume. Changes to init SQL or
 `POSTGRES_PASSWORD` do not migrate an existing database. Tables are added by files
 in `infrastructure/docker/postgres/migrations/`, applied in name order by
-`make migrate`. There is no record of applied migrations, so every file must be
-safe to run again (see [ADR 003](adr/003-fetch-records.md)).
+`make migrate`. Each file runs once in a transaction and is recorded with its
+SHA-256 in `metadata.schema_migrations`. Do not edit an applied migration: the
+next `make migrate` fails with an error. Add a new file instead (see
+[ADR 003](adr/003-fetch-records.md)).
 
 S3 defaults to bucket `mobility`, region `us-east-1`, path-style addressing.
 For the local Python collector, the access key is `MINIO_ROOT_USER`, the

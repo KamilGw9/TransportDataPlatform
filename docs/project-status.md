@@ -12,10 +12,22 @@ Last updated: 2026-09-30.
   `raw/gtfs/source_id=krakow_ztp_m/sha256=<hash>/schedule.zip` in the `mobility`
   bucket. An existing key is not rewritten, so repeated runs are idempotent;
   S3 errors other than a missing object are propagated.
+- Fetch records: every run writes one row to `metadata.fetch_attempt` with status
+  `stored`, `unchanged` or `failed`, HTTP status, size, hash, object key and error;
+  see [ADR 003](adr/003-fetch-records.md). Unexpected errors are recorded too,
+  including the underlying cause and, for upload failures, the hash and key. The
+  table is created by the first SQL migration. `make migrate` (also part of
+  `make up`) applies each migration once and records it in
+  `metadata.schema_migrations`.
 - Verification: CLI help and version work; `make lint` and `make test` pass
-  (23 Python tests). Ingestion tests use simulated HTTP responses and a fake S3
-  client. A manual run against local MinIO stored the object and a repeated run
-  skipped it.
+  (30 Python tests). Ingestion tests use simulated HTTP responses, a fake S3
+  client and a fake database connection. A manual run against local MinIO stored
+  the object and a repeated run skipped it (before fetch records). A manual run
+  against local MinIO and PostgreSQL recorded the attempt in
+  `metadata.fetch_attempt` (before the review fixes). Against the local database,
+  `make migrate` applied the migration once and skipped it on repeat; an edited
+  applied migration stopped the run; a failing migration left neither its table
+  nor a registry row.
 - Local data: ZIP and PB files in `tools/feed_profiler/data/` (excluded from Git).
 - Data verification: ZIP hashes match `sources.json` and the archived reports;
   PB counts: A=55, M=66, T=66.
@@ -41,14 +53,13 @@ Last updated: 2026-09-30.
   the October 2025 security release, built from pinned sources. Reassess the service
   before shared or cloud deployment.
 - Limitations: only the Mobilis schedule ZIP is archived; GTFS-RT snapshots are
-  not collected by the platform yet. There is no fetch record or registry of HTTP
-  attempts, so a run that finds an unchanged feed leaves no trace. The ingestion
-  entry point is a module script with a fixed URL and source ID, not a CLI command.
+  not collected by the platform yet. If the database write fails after an upload,
+  that attempt is not recorded. Fetch records are only tested against a fake
+  connection, not the real table constraints. The ingestion entry point is a
+  module script with a fixed URL and source ID, not a CLI command.
   The profiler remains an exploratory tool. The short sample does not validate
   overnight service or daylight saving time transitions.
 - Open questions: longer observation of M, time/delay consistency, service date
   resolution, vehicle state interpretation, and arrival estimation accuracy.
-- Next task (user implementation): add a fetch record with URL, fetch time, size
-  and hash. Decide first whether it is a JSON manifest in S3 or a table in the
-  `metadata` schema, and whether every attempt is recorded or only new files;
-  record the decision in an ADR. No domain tables have been added yet.
+- Next task: collect GTFS-RT snapshots for M with the same RAW and fetch-record
+  approach. No domain tables have been added yet.
