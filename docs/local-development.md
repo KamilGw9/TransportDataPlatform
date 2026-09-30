@@ -21,8 +21,9 @@ Compose reads this file; Make never evaluates it as shell code.
 The first build compiles the pinned MinIO source release and can take several
 minutes, with substantially more disk and memory use than subsequent starts.
 `make up` waits for PostgreSQL and MinIO to become healthy, then runs bucket
-initialization in the foreground. A failed initialization makes the command fail.
-Repeated initialization preserves existing buckets and objects.
+initialization in the foreground, then applies SQL migrations (`make migrate`).
+A failed initialization or migration makes the command fail. Repeated
+initialization preserves existing buckets and objects.
 
 ```bash
 make logs
@@ -50,14 +51,18 @@ to loopback. Use local `.env` values for credentials; do not paste them into log
 PostgreSQL defaults to database/user `mobility`. `make postgres` opens psql using
 the configured values. Schemas:
 
-- `metadata`: future fetch, file and processing records;
+- `metadata`: fetch records (`metadata.fetch_attempt`), later file and processing records;
 - `staging`: future input tables;
 - `core`: future normalized transport models;
 - `marts`: future analytical outputs.
 
 The initial SQL only runs on a new empty PostgreSQL volume. Changes to init SQL or
-`POSTGRES_PASSWORD` do not migrate an existing database. Use explicit SQL migrations
-and password changes once data exists.
+`POSTGRES_PASSWORD` do not migrate an existing database. Tables are added by files
+in `infrastructure/docker/postgres/migrations/`, applied in name order by
+`make migrate`. Each file runs once in a transaction and is recorded with its
+SHA-256 in `metadata.schema_migrations`. Do not edit an applied migration: the
+next `make migrate` fails with an error. Add a new file instead (see
+[ADR 003](adr/003-fetch-records.md)).
 
 S3 defaults to bucket `mobility`, region `us-east-1`, path-style addressing.
 For the local Python collector, the access key is `MINIO_ROOT_USER`, the
@@ -88,12 +93,23 @@ set -a; source .env; set +a
 uv run python -m mobility.ingestion.gtfs
 ```
 
-The script needs `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` in the environment;
-`MINIO_API_PORT`, `S3_REGION` and `S3_BUCKET` default to `9000`, `us-east-1` and
-`mobility`. It downloads `GTFS_KRK_M.zip`, rejects invalid ZIP data and stores the
-exact bytes under `raw/gtfs/source_id=krakow_ztp_m/sha256=<hash>/schedule.zip`.
-Running it again with an unchanged feed skips the upload. Objects can be inspected
-in the MinIO console.
+The script needs `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` and `POSTGRES_PASSWORD`
+in the environment; `MINIO_API_PORT`, `S3_REGION`, `S3_BUCKET`, `POSTGRES_PORT`,
+`POSTGRES_DB` and `POSTGRES_USER` default to the `.env.example` values. It
+downloads `GTFS_KRK_M.zip`, rejects invalid ZIP data and stores the exact bytes
+under `raw/gtfs/source_id=krakow_ztp_m/sha256=<hash>/schedule.zip`. Running it
+again with an unchanged feed skips the upload. Objects can be inspected in the
+MinIO console.
+
+Every run adds one row to `metadata.fetch_attempt` with status `stored`,
+`unchanged` or `failed`; a failed run exits with status 1. Recent attempts:
+
+```sql
+SELECT fetched_at, status, http_status, size_bytes, left(sha256, 12), error
+FROM metadata.fetch_attempt
+ORDER BY fetched_at DESC
+LIMIT 10;
+```
 
 ## Troubleshooting
 

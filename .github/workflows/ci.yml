@@ -47,4 +47,5 @@ jobs:
           make setup
           docker compose config --quiet
           bash -n scripts/check_infrastructure.sh
+          bash -n scripts/migrate.sh
           sh -n infrastructure/docker/minio/init.sh
