@@ -2,14 +2,18 @@
 
 import io
 import zipfile
+from datetime import UTC, datetime
 
 import httpx
 import pytest
 from botocore.exceptions import ClientError
 
 from mobility.ingestion.gtfs import (
+    FetchAttempt,
+    archive_schedule,
     fetch_data,
     raw_object_key,
+    record_attempt,
     sha256_hex,
     upload_raw,
     validate_zip,
@@ -27,7 +31,7 @@ def test_fetch_preserves_binary_content(monkeypatch: pytest.MonkeyPatch) -> None
     with httpx.Client(transport=httpx.MockTransport(respond)) as client:
         monkeypatch.setattr(httpx, "get", client.get)
 
-        assert fetch_data(URL) == payload
+        assert fetch_data(URL).content == payload
 
 
 @pytest.mark.parametrize("status_code", [404, 500])
@@ -153,3 +157,122 @@ def test_upload_propagates_other_errors() -> None:
         upload_raw(client, "bucket", "some/key", b"data")
 
     assert client.puts == []
+
+
+def serve(
+    monkeypatch: pytest.MonkeyPatch, status_code: int, content: bytes
+) -> httpx.Client:
+    def respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code, content=content)
+
+    client = httpx.Client(transport=httpx.MockTransport(respond))
+    monkeypatch.setattr(httpx, "get", client.get)
+    return client
+
+
+def test_archive_records_stored_schedule(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = make_zip()
+    s3 = FakeS3(head_error_code="404")
+
+    with serve(monkeypatch, 200, payload):
+        attempt = archive_schedule(s3, "bucket", "krakow_ztp_m", URL)
+
+    digest = sha256_hex(payload)
+    assert attempt.status == "stored"
+    assert attempt.http_status == 200
+    assert attempt.size_bytes == len(payload)
+    assert attempt.sha256 == digest
+    assert attempt.object_key == raw_object_key("krakow_ztp_m", digest)
+    assert attempt.error is None
+    assert attempt.fetched_at.tzinfo is not None
+    assert s3.puts[0]["Body"] == payload
+
+
+def test_archive_records_unchanged_schedule(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = make_zip()
+    s3 = FakeS3()
+
+    with serve(monkeypatch, 200, payload):
+        attempt = archive_schedule(s3, "bucket", "krakow_ztp_m", URL)
+
+    assert attempt.status == "unchanged"
+    assert attempt.sha256 == sha256_hex(payload)
+    assert s3.puts == []
+
+
+def test_archive_records_http_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    s3 = FakeS3(head_error_code="404")
+
+    with serve(monkeypatch, 503, b"Service unavailable"):
+        attempt = archive_schedule(s3, "bucket", "krakow_ztp_m", URL)
+
+    assert attempt.status == "failed"
+    assert attempt.http_status == 503
+    assert attempt.size_bytes is None
+    assert attempt.sha256 is None
+    assert attempt.error.startswith("HTTPStatusError")
+    assert s3.puts == []
+
+
+def test_archive_records_invalid_zip(monkeypatch: pytest.MonkeyPatch) -> None:
+    s3 = FakeS3(head_error_code="404")
+
+    with serve(monkeypatch, 200, b"<html>maintenance</html>"):
+        attempt = archive_schedule(s3, "bucket", "krakow_ztp_m", URL)
+
+    assert attempt.status == "failed"
+    assert attempt.http_status == 200
+    assert attempt.size_bytes == len(b"<html>maintenance</html>")
+    assert attempt.object_key is None
+    assert attempt.error.startswith("ValueError")
+    assert s3.puts == []
+
+
+def test_archive_records_s3_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    s3 = FakeS3(head_error_code="403")
+
+    with serve(monkeypatch, 200, make_zip()):
+        attempt = archive_schedule(s3, "bucket", "krakow_ztp_m", URL)
+
+    assert attempt.status == "failed"
+    assert attempt.error.startswith("ClientError")
+    assert attempt.object_key is None
+
+
+class FakeConnection:
+    def __init__(self) -> None:
+        self.executed: list[tuple[str, tuple]] = []
+
+    def execute(self, query: str, params: tuple) -> None:
+        self.executed.append((query, params))
+
+
+def test_record_attempt_inserts_all_fields() -> None:
+    conn = FakeConnection()
+    fetched_at = datetime(2026, 9, 30, 12, 0, tzinfo=UTC)
+    attempt = FetchAttempt(
+        source_id="krakow_ztp_m",
+        url=URL,
+        fetched_at=fetched_at,
+        status="stored",
+        http_status=200,
+        size_bytes=10,
+        sha256="abc",
+        object_key="raw/key",
+    )
+
+    record_attempt(conn, attempt)
+
+    [(query, params)] = conn.executed
+    assert "INSERT INTO metadata.fetch_attempt" in query
+    assert params == (
+        "krakow_ztp_m",
+        URL,
+        fetched_at,
+        "stored",
+        200,
+        10,
+        "abc",
+        "raw/key",
+        None,
+    )

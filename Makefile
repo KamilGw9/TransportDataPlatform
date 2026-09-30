@@ -1,9 +1,9 @@
-.PHONY: help setup up down ps logs postgres check-infra test lint
+.PHONY: help setup up migrate down ps logs postgres check-infra test lint
 
 COMPOSE := docker compose
 
 help:
-	@printf '%s\n' 'make setup        Prepare local .env (preserves existing values)' 'make up           Start PostgreSQL, MinIO and initialize the bucket' 'make down         Stop services, retaining all volumes' 'make ps           Show service status' 'make logs         Follow service logs' 'make postgres     Open a SQL session' 'make check-infra  Check SQL and S3 writes across container recreation' 'make test         Run Python tests' 'make lint         Check Python style'
+	@printf '%s\n' 'make setup        Prepare local .env (preserves existing values)' 'make up           Start PostgreSQL, MinIO, initialize the bucket and migrate' 'make migrate      Apply SQL migrations (safe to repeat)' 'make down         Stop services, retaining all volumes' 'make ps           Show service status' 'make logs         Follow service logs' 'make postgres     Open a SQL session' 'make check-infra  Check SQL and S3 writes across container recreation' 'make test         Run Python tests' 'make lint         Check Python style'
 
 setup:
 	python3 scripts/setup_env.py
@@ -12,6 +12,13 @@ up:
 	$(COMPOSE) config --quiet
 	$(COMPOSE) up -d --build --wait --wait-timeout 120 postgres minio
 	$(COMPOSE) run --rm --no-deps minio-init
+	$(MAKE) --no-print-directory migrate
+
+migrate:
+	@for file in infrastructure/docker/postgres/migrations/*.sql; do \
+		echo "Applying $$file"; \
+		$(COMPOSE) exec -T postgres sh -c 'exec psql -v ON_ERROR_STOP=1 -q -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"' < "$$file" || exit 1; \
+	done
 
 down:
 	$(COMPOSE) down

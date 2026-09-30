@@ -1,18 +1,22 @@
 import hashlib
 import io
 import os
+import sys
 import zipfile
 import zlib
+from dataclasses import dataclass
+from datetime import UTC, datetime
 
 import boto3
 import httpx
-from botocore.exceptions import ClientError
+import psycopg
+from botocore.exceptions import BotoCoreError, ClientError
 
 
-def fetch_data(url: str) -> bytes:
+def fetch_data(url: str) -> httpx.Response:
     response = httpx.get(url, timeout=30, follow_redirects=True)
     response.raise_for_status()
-    return response.content
+    return response
 
 
 def validate_zip(data: bytes) -> None:
@@ -20,9 +24,9 @@ def validate_zip(data: bytes) -> None:
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
             bad_member = archive.testzip()
     except (zipfile.BadZipFile, zlib.error, EOFError) as e:
-        raise ValueError("Pobrane dane nie są poprawnym plikiem ZIP") from e
+        raise ValueError("Downloaded data is not a valid ZIP file") from e
     if bad_member is not None:
-        raise ValueError(f"Błąd CRC w pliku ZIP: {bad_member}")
+        raise ValueError(f"CRC error in ZIP member: {bad_member}")
 
 
 def sha256_hex(data: bytes) -> str:
@@ -59,23 +63,106 @@ def upload_raw(client, bucket: str, key: str, data: bytes) -> bool:
     return True
 
 
+@dataclass(frozen=True)
+class FetchAttempt:
+    source_id: str
+    url: str
+    fetched_at: datetime
+    status: str
+    http_status: int | None = None
+    size_bytes: int | None = None
+    sha256: str | None = None
+    object_key: str | None = None
+    error: str | None = None
+
+
+def archive_schedule(client, bucket: str, source_id: str, url: str) -> FetchAttempt:
+    fetched_at = datetime.now(UTC)
+    http_status = None
+    data = None
+    try:
+        response = fetch_data(url)
+        http_status = response.status_code
+        data = response.content
+        validate_zip(data)
+        digest = sha256_hex(data)
+        key = raw_object_key(source_id, digest)
+        stored = upload_raw(client, bucket, key, data)
+    except (httpx.HTTPError, ValueError, BotoCoreError, ClientError) as e:
+        if isinstance(e, httpx.HTTPStatusError):
+            http_status = e.response.status_code
+        return FetchAttempt(
+            source_id=source_id,
+            url=url,
+            fetched_at=fetched_at,
+            status="failed",
+            http_status=http_status,
+            size_bytes=None if data is None else len(data),
+            error=f"{type(e).__name__}: {e}",
+        )
+
+    return FetchAttempt(
+        source_id=source_id,
+        url=url,
+        fetched_at=fetched_at,
+        status="stored" if stored else "unchanged",
+        http_status=http_status,
+        size_bytes=len(data),
+        sha256=digest,
+        object_key=key,
+    )
+
+
+_INSERT_ATTEMPT = """
+INSERT INTO metadata.fetch_attempt
+    (source_id, url, fetched_at, status, http_status, size_bytes, sha256,
+     object_key, error)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+"""
+
+
+def record_attempt(conn, attempt: FetchAttempt) -> None:
+    conn.execute(
+        _INSERT_ATTEMPT,
+        (
+            attempt.source_id,
+            attempt.url,
+            attempt.fetched_at,
+            attempt.status,
+            attempt.http_status,
+            attempt.size_bytes,
+            attempt.sha256,
+            attempt.object_key,
+            attempt.error,
+        ),
+    )
+
+
+def connect_postgres() -> psycopg.Connection:
+    return psycopg.connect(
+        host="127.0.0.1",
+        port=os.environ.get("POSTGRES_PORT", "5432"),
+        dbname=os.environ.get("POSTGRES_DB", "mobility"),
+        user=os.environ.get("POSTGRES_USER", "mobility"),
+        password=os.environ["POSTGRES_PASSWORD"],
+    )
+
+
 if __name__ == "__main__":
     source_id = "krakow_ztp_m"
     url = "https://gtfs.ztp.krakow.pl/GTFS_KRK_M.zip"
     client = make_s3_client()
     bucket = os.environ.get("S3_BUCKET", "mobility")
 
-    print(f"Pobieranie GTFS z: {url}")
-    data = fetch_data(url)
-    validate_zip(data)
-    digest = sha256_hex(data)
-    key = raw_object_key(source_id, digest)
+    with connect_postgres() as conn:
+        print(f"Downloading GTFS from: {url}")
+        attempt = archive_schedule(client, bucket, source_id, url)
+        record_attempt(conn, attempt)
 
-    print(f"✓ Pobrano: {len(data):,} bajtów")
-    print(f"✓ SHA-256: {digest}")
-    print(f"✓ Klucz S3: {key}")
-
-    if upload_raw(client, bucket, key, data):
-        print("✓ Zapisano do S3")
-    else:
-        print("✓ Plik już istnieje w S3, pominięto zapis")
+    print(f"Status: {attempt.status}")
+    if attempt.status == "failed":
+        print(f"Error: {attempt.error}", file=sys.stderr)
+        sys.exit(1)
+    print(f"Size: {attempt.size_bytes:,} bytes")
+    print(f"SHA-256: {attempt.sha256}")
+    print(f"S3 key: {attempt.object_key}")
