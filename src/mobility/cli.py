@@ -1,6 +1,8 @@
 import argparse
 import logging
 import os
+import signal
+import threading
 from collections.abc import Callable
 from importlib.metadata import version
 
@@ -11,18 +13,52 @@ from mobility.ingestion.archive import (
     connect_postgres,
     make_s3_client,
 )
+from mobility.ingestion.collector import collect
+
+logger = logging.getLogger(__name__)
 
 
 def run_archive(
-    feeds: dict[str, str], archive_feed: Callable[..., FetchAttempt]
-) -> int:
-    client = make_s3_client()
-    bucket = os.environ.get("S3_BUCKET", "mobility")
+    client,
+    bucket: str,
+    feeds: dict[str, str],
+    archive_feed: Callable[..., FetchAttempt],
+) -> bool:
     # Connect before downloading so an unavailable database fails the run
     # before anything is uploaded.
     with connect_postgres() as conn:
-        ok = archive_and_record(client, bucket, conn, feeds, archive_feed)
-    return 0 if ok else 1
+        return archive_and_record(client, bucket, conn, feeds, archive_feed)
+
+
+def collect_realtime(client, bucket: str, interval: float) -> None:
+    stop = threading.Event()
+    # docker stop sends SIGTERM, Ctrl+C sends SIGINT; both end the loop after
+    # the current cycle.
+    for signum in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(signum, lambda *_: stop.set())
+
+    logger.info(
+        "Collecting %d GTFS-RT feeds every %g s",
+        len(gtfs_rt.MOBILIS_FEEDS),
+        interval,
+    )
+    # A new connection per cycle: a database restart costs one cycle instead
+    # of breaking a connection held for days.
+    collect(
+        lambda: run_archive(
+            client, bucket, gtfs_rt.MOBILIS_FEEDS, gtfs_rt.archive_snapshot
+        ),
+        interval,
+        stop,
+    )
+    logger.info("Collector stopped")
+
+
+def positive_seconds(value: str) -> float:
+    seconds = float(value)
+    if seconds <= 0:
+        raise argparse.ArgumentTypeError("must be greater than 0")
+    return seconds
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -42,16 +78,36 @@ def main(argv: list[str] | None = None) -> int:
     commands.add_parser(
         "archive-realtime", help="Archive one snapshot of each Mobilis GTFS-RT feed"
     )
+    collect_parser = commands.add_parser(
+        "collect-realtime",
+        help="Archive Mobilis GTFS-RT snapshots repeatedly until stopped",
+    )
+    collect_parser.add_argument(
+        "--interval",
+        type=positive_seconds,
+        default=30.0,
+        help="Seconds between the starts of two cycles (default: 30)",
+    )
     args = parser.parse_args(argv)
+    if args.command is None:
+        parser.print_help()
+        return 0
 
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
     )
     # httpx logs every request at INFO; our own line per attempt is enough.
     logging.getLogger("httpx").setLevel(logging.WARNING)
+
+    client = make_s3_client()
+    bucket = os.environ.get("S3_BUCKET", "mobility")
     if args.command == "archive-schedule":
-        return run_archive(gtfs.MOBILIS_SCHEDULE, gtfs.archive_schedule)
+        ok = run_archive(client, bucket, gtfs.MOBILIS_SCHEDULE, gtfs.archive_schedule)
+        return 0 if ok else 1
     if args.command == "archive-realtime":
-        return run_archive(gtfs_rt.MOBILIS_FEEDS, gtfs_rt.archive_snapshot)
-    parser.print_help()
+        ok = run_archive(
+            client, bucket, gtfs_rt.MOBILIS_FEEDS, gtfs_rt.archive_snapshot
+        )
+        return 0 if ok else 1
+    collect_realtime(client, bucket, args.interval)
     return 0

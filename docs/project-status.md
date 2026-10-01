@@ -21,6 +21,8 @@ fetch records. Stages 1 and 2 are complete.
 - RAW GTFS-RT archiving for the three Mobilis feeds
   (`mobility archive-realtime`): each run validates the protobuf message and
   stores it under `raw/gtfs_rt/source_id=<feed>/date=<UTC date>/sha256=<hash>.pb`.
+  `mobility collect-realtime` repeats this every 30 seconds until stopped and
+  survives PostgreSQL restarts.
 - Fetch records: every run writes one row to `metadata.fetch_attempt` with
   status `stored`, `unchanged` or `failed`, including the error for failures
   ([ADR 003](adr/003-fetch-records.md)). Schema changes are applied by
@@ -31,8 +33,7 @@ fetch records. Stages 1 and 2 are complete.
 
 ## Limitations
 
-- GTFS-RT snapshots are fetched once per run; there is no continuous collection
-  yet.
+- The collector runs in the foreground; it is not yet a managed service.
 - Sources and URLs are fixed in code; only Mobilis is configured.
 - If the database write fails after an upload, that attempt is not recorded.
 - Ingestion tests use fakes for HTTP, S3 and PostgreSQL; table constraints are
@@ -44,6 +45,6 @@ fetch records. Stages 1 and 2 are complete.
 
 ## Next
 
-Collect GTFS-RT snapshots continuously.
+Run the collector as a Docker Compose service.
 Open questions: service date resolution, interpretation of vehicle states and
 the accuracy of arrival estimates.

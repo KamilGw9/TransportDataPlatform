@@ -124,6 +124,16 @@ has its own `source_id` (for example `krakow_ztp_m_trip_updates`) and its own ro
 in `metadata.fetch_attempt`. A snapshot identical to one already stored that day
 is recorded as `unchanged`.
 
+To collect continuously, run:
+
+```bash
+uv run mobility collect-realtime --interval 30
+```
+
+Each cycle archives all three feeds and opens a new database connection, so a
+PostgreSQL restart only skips the cycles while the database is down. Ctrl+C or
+SIGTERM stops the collector after the current cycle.
+
 ## Troubleshooting
 
 - Connection to `docker.sock` denied: check Docker Desktop WSL integration or
