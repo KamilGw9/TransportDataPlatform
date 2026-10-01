@@ -90,12 +90,13 @@ Expected result: `PASS: all schemas exist; SQL row and S3 object survived contai
 
 ```bash
 set -a; source .env; set +a
-uv run python -m mobility.ingestion.gtfs
+uv run mobility archive-schedule
 ```
 
-The script needs `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` and `POSTGRES_PASSWORD`
+The command needs `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` and `POSTGRES_PASSWORD`
 in the environment; `MINIO_API_PORT`, `S3_REGION`, `S3_BUCKET`, `POSTGRES_PORT`,
-`POSTGRES_DB` and `POSTGRES_USER` default to the `.env.example` values. It
+`POSTGRES_DB` and `POSTGRES_USER` default to the `.env.example` values.
+`POSTGRES_HOST` and `S3_ENDPOINT_URL` default to the loopback addresses above. It
 downloads `GTFS_KRK_M.zip`, rejects invalid ZIP data and stores the exact bytes
 under `raw/gtfs/source_id=krakow_ztp_m/sha256=<hash>/schedule.zip`. Running it
 again with an unchanged feed skips the upload. Objects can be inspected in the
@@ -110,6 +111,57 @@ FROM metadata.fetch_attempt
 ORDER BY fetched_at DESC
 LIMIT 10;
 ```
+
+## Archive GTFS-RT snapshots
+
+```bash
+uv run mobility archive-realtime
+```
+
+One run downloads the Mobilis VehiclePositions, TripUpdates and ServiceAlerts
+feeds once, rejects payloads that are not a valid GTFS-RT message and stores each
+under `raw/gtfs_rt/source_id=<feed>/date=<UTC date>/sha256=<hash>.pb`. Each feed
+has its own `source_id` (for example `krakow_ztp_m_trip_updates`) and its own row
+in `metadata.fetch_attempt`. A snapshot identical to one already stored that day
+is recorded as `unchanged`.
+
+To collect continuously, run:
+
+```bash
+uv run mobility collect-realtime --interval 30
+```
+
+Each cycle archives all three feeds and opens a new database connection, so a
+PostgreSQL restart only skips the cycles while the database is down. Ctrl+C or
+SIGTERM stops the collector after the current cycle.
+
+## Run the collector as a service
+
+```bash
+make collect
+make logs
+make collect-stop
+```
+
+`make collect` runs `make up`, builds the application image from the root
+`Dockerfile` and starts the `collector` service, which runs
+`mobility collect-realtime` and restarts unless stopped. Inside the Compose network
+it reaches `postgres:5432` and `http://minio:9000`. Its logs are rotated at
+10 MB, three files. `make collect-stop` stops only the collector; `make down`
+stops everything.
+
+## Database tests
+
+`make test` skips tests marked `integration`. They check the
+`metadata.fetch_attempt` constraints against the running PostgreSQL, inside
+transactions that are rolled back:
+
+```bash
+set -a; source .env; set +a
+uv run pytest -m integration
+```
+
+CI runs them against a fresh PostgreSQL container after `make migrate`.
 
 ## Troubleshooting
 

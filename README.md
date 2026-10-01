@@ -21,6 +21,7 @@ windows from vehicle states still requires validation.
 make setup
 make up
 make check-infra
+make collect    # optional: collect GTFS-RT snapshots every 30 s
 ```
 
 PostgreSQL is available at `127.0.0.1:5432`; the S3 endpoint is
@@ -38,16 +39,19 @@ uv sync --locked
 uv run mobility --help
 uv run mobility --version
 uv run pytest
+uv run pytest -m integration   # needs make up and the variables from .env
 uv run ruff check src/ tools/feed_profiler/
 uv run ruff format --check src/ tools/feed_profiler/
 ```
 
-Archive the current Mobilis schedule (requires running services, see
+Archive the current Mobilis schedule and one snapshot of each realtime feed
+(requires running services, see
 [local setup](docs/local-development.md#archive-the-gtfs-schedule)):
 
 ```bash
 set -a; source .env; set +a
-uv run python -m mobility.ingestion.gtfs
+uv run mobility archive-schedule
+uv run mobility archive-realtime
 ```
 
 Project documentation, code identifiers, and commit messages are written in English.

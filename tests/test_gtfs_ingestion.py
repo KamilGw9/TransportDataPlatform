@@ -7,17 +7,18 @@ from datetime import UTC, datetime
 import httpx
 import pytest
 from botocore.exceptions import ClientError
+from google.transit import gtfs_realtime_pb2
 
-from mobility.ingestion.gtfs import (
+from mobility.ingestion import gtfs_rt
+from mobility.ingestion.archive import (
     FetchAttempt,
-    archive_schedule,
+    archive_and_record,
     fetch_data,
-    raw_object_key,
     record_attempt,
     sha256_hex,
     upload_raw,
-    validate_zip,
 )
+from mobility.ingestion.gtfs import archive_schedule, raw_object_key, validate_zip
 
 URL = "https://example.test/schedule.zip"
 
@@ -291,3 +292,104 @@ def test_record_attempt_inserts_all_fields() -> None:
         "raw/key",
         None,
     )
+
+
+def make_feed_message() -> bytes:
+    message = gtfs_realtime_pb2.FeedMessage()
+    message.header.gtfs_realtime_version = "2.0"
+    message.header.timestamp = 1790000000
+    entity = message.entity.add()
+    entity.id = "vehicle-1"
+    entity.vehicle.trip.trip_id = "block_1_trip_1"
+    return message.SerializeToString()
+
+
+def test_validate_feed_message_accepts_valid_feed() -> None:
+    gtfs_rt.validate_feed_message(make_feed_message())
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [b"<html>Przerwa techniczna</html>", make_feed_message()[:-3]],
+    ids=["html", "truncated"],
+)
+def test_validate_feed_message_rejects_corrupt_payload(payload: bytes) -> None:
+    with pytest.raises(ValueError, match="not a GTFS-RT message"):
+        gtfs_rt.validate_feed_message(payload)
+
+
+def test_validate_feed_message_rejects_missing_header() -> None:
+    with pytest.raises(ValueError, match="required fields"):
+        gtfs_rt.validate_feed_message(b"")
+
+
+def test_realtime_object_key_uses_utc_fetch_date() -> None:
+    warsaw_after_midnight = datetime.fromisoformat("2026-10-02T00:30:00+02:00")
+
+    assert gtfs_rt.raw_object_key("feed", "abc123", warsaw_after_midnight) == (
+        "raw/gtfs_rt/source_id=feed/date=2026-10-01/sha256=abc123.pb"
+    )
+
+
+def test_archive_snapshot_stores_feed_under_fetch_date(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = make_feed_message()
+    s3 = FakeS3(head_error_code="404")
+
+    with serve(monkeypatch, 200, payload):
+        attempt = gtfs_rt.archive_snapshot(s3, "bucket", "feed", URL)
+
+    digest = sha256_hex(payload)
+    assert attempt.status == "stored"
+    assert attempt.object_key == gtfs_rt.raw_object_key(
+        "feed", digest, attempt.fetched_at
+    )
+    assert s3.puts[0]["Body"] == payload
+
+
+def test_archive_snapshot_records_invalid_feed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    s3 = FakeS3(head_error_code="404")
+
+    with serve(monkeypatch, 200, b"<html>maintenance</html>"):
+        attempt = gtfs_rt.archive_snapshot(s3, "bucket", "feed", URL)
+
+    assert attempt.status == "failed"
+    assert "caused by DecodeError" in attempt.error
+    assert s3.puts == []
+
+
+def fixed_attempts(*statuses: str):
+    attempts = {
+        f"feed_{index}": FetchAttempt(
+            source_id=f"feed_{index}",
+            url=URL,
+            fetched_at=datetime(2026, 10, 1, tzinfo=UTC),
+            status=status,
+            error="RuntimeError: boom" if status == "failed" else None,
+        )
+        for index, status in enumerate(statuses)
+    }
+
+    def archive_feed(client, bucket: str, source_id: str, url: str) -> FetchAttempt:
+        return attempts[source_id]
+
+    return {source_id: URL for source_id in attempts}, archive_feed
+
+
+def test_archive_and_record_reports_success() -> None:
+    conn = FakeConnection()
+    feeds, archive_feed = fixed_attempts("stored", "unchanged")
+
+    assert archive_and_record(None, "bucket", conn, feeds, archive_feed) is True
+    assert len(conn.executed) == 2
+
+
+def test_archive_and_record_continues_after_failed_feed() -> None:
+    conn = FakeConnection()
+    feeds, archive_feed = fixed_attempts("failed", "stored")
+
+    assert archive_and_record(None, "bucket", conn, feeds, archive_feed) is False
+    assert [params[0] for _, params in conn.executed] == ["feed_0", "feed_1"]

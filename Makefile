@@ -1,9 +1,9 @@
-.PHONY: help setup up migrate down ps logs postgres check-infra test lint
+.PHONY: help setup up migrate collect collect-stop down ps logs postgres check-infra test lint
 
 COMPOSE := docker compose
 
 help:
-	@printf '%s\n' 'make setup        Prepare local .env (preserves existing values)' 'make up           Start PostgreSQL, MinIO, initialize the bucket and migrate' 'make migrate      Apply SQL migrations (safe to repeat)' 'make down         Stop services, retaining all volumes' 'make ps           Show service status' 'make logs         Follow service logs' 'make postgres     Open a SQL session' 'make check-infra  Check SQL and S3 writes across container recreation' 'make test         Run Python tests' 'make lint         Check Python style'
+	@printf '%s\n' 'make setup        Prepare local .env (preserves existing values)' 'make up           Start PostgreSQL, MinIO, initialize the bucket and migrate' 'make migrate      Apply SQL migrations (safe to repeat)' 'make collect      Start the GTFS-RT collector service (runs make up first)' 'make collect-stop Stop the collector, keeping other services' 'make down         Stop services, retaining all volumes' 'make ps           Show service status' 'make logs         Follow service logs' 'make postgres     Open a SQL session' 'make check-infra  Check SQL and S3 writes across container recreation' 'make test         Run Python tests' 'make lint         Check Python style'
 
 setup:
 	python3 scripts/setup_env.py
@@ -16,6 +16,12 @@ up:
 
 migrate:
 	bash scripts/migrate.sh
+
+collect: up
+	$(COMPOSE) up -d --build --wait collector
+
+collect-stop:
+	$(COMPOSE) stop collector
 
 down:
 	$(COMPOSE) down
