@@ -111,6 +111,19 @@ ORDER BY fetched_at DESC
 LIMIT 10;
 ```
 
+## Archive GTFS-RT snapshots
+
+```bash
+uv run python -m mobility.ingestion.gtfs_rt
+```
+
+One run downloads the Mobilis VehiclePositions, TripUpdates and ServiceAlerts
+feeds once, rejects payloads that are not a valid GTFS-RT message and stores each
+under `raw/gtfs_rt/source_id=<feed>/date=<UTC date>/sha256=<hash>.pb`. Each feed
+has its own `source_id` (for example `krakow_ztp_m_trip_updates`) and its own row
+in `metadata.fetch_attempt`. A snapshot identical to one already stored that day
+is recorded as `unchanged`.
+
 ## Troubleshooting
 
 - Connection to `docker.sock` denied: check Docker Desktop WSL integration or

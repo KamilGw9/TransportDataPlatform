@@ -7,7 +7,9 @@ from datetime import UTC, datetime
 import httpx
 import pytest
 from botocore.exceptions import ClientError
+from google.transit import gtfs_realtime_pb2
 
+from mobility.ingestion import gtfs_rt
 from mobility.ingestion.archive import (
     FetchAttempt,
     fetch_data,
@@ -289,3 +291,70 @@ def test_record_attempt_inserts_all_fields() -> None:
         "raw/key",
         None,
     )
+
+
+def make_feed_message() -> bytes:
+    message = gtfs_realtime_pb2.FeedMessage()
+    message.header.gtfs_realtime_version = "2.0"
+    message.header.timestamp = 1790000000
+    entity = message.entity.add()
+    entity.id = "vehicle-1"
+    entity.vehicle.trip.trip_id = "block_1_trip_1"
+    return message.SerializeToString()
+
+
+def test_validate_feed_message_accepts_valid_feed() -> None:
+    gtfs_rt.validate_feed_message(make_feed_message())
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [b"<html>Przerwa techniczna</html>", make_feed_message()[:-3]],
+    ids=["html", "truncated"],
+)
+def test_validate_feed_message_rejects_corrupt_payload(payload: bytes) -> None:
+    with pytest.raises(ValueError, match="not a GTFS-RT message"):
+        gtfs_rt.validate_feed_message(payload)
+
+
+def test_validate_feed_message_rejects_missing_header() -> None:
+    with pytest.raises(ValueError, match="required fields"):
+        gtfs_rt.validate_feed_message(b"")
+
+
+def test_realtime_object_key_uses_utc_fetch_date() -> None:
+    warsaw_after_midnight = datetime.fromisoformat("2026-10-02T00:30:00+02:00")
+
+    assert gtfs_rt.raw_object_key("feed", "abc123", warsaw_after_midnight) == (
+        "raw/gtfs_rt/source_id=feed/date=2026-10-01/sha256=abc123.pb"
+    )
+
+
+def test_archive_snapshot_stores_feed_under_fetch_date(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = make_feed_message()
+    s3 = FakeS3(head_error_code="404")
+
+    with serve(monkeypatch, 200, payload):
+        attempt = gtfs_rt.archive_snapshot(s3, "bucket", "feed", URL)
+
+    digest = sha256_hex(payload)
+    assert attempt.status == "stored"
+    assert attempt.object_key == gtfs_rt.raw_object_key(
+        "feed", digest, attempt.fetched_at
+    )
+    assert s3.puts[0]["Body"] == payload
+
+
+def test_archive_snapshot_records_invalid_feed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    s3 = FakeS3(head_error_code="404")
+
+    with serve(monkeypatch, 200, b"<html>maintenance</html>"):
+        attempt = gtfs_rt.archive_snapshot(s3, "bucket", "feed", URL)
+
+    assert attempt.status == "failed"
+    assert "caused by DecodeError" in attempt.error
+    assert s3.puts == []
