@@ -8,16 +8,14 @@ import httpx
 import pytest
 from botocore.exceptions import ClientError
 
-from mobility.ingestion.gtfs import (
+from mobility.ingestion.archive import (
     FetchAttempt,
-    archive_schedule,
     fetch_data,
-    raw_object_key,
     record_attempt,
     sha256_hex,
     upload_raw,
-    validate_zip,
 )
+from mobility.ingestion.gtfs import archive_schedule, raw_object_key, validate_zip
 
 URL = "https://example.test/schedule.zip"
 
