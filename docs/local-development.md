@@ -150,6 +150,19 @@ it reaches `postgres:5432` and `http://minio:9000`. Its logs are rotated at
 10 MB, three files. `make collect-stop` stops only the collector; `make down`
 stops everything.
 
+## Database tests
+
+`make test` skips tests marked `integration`. They check the
+`metadata.fetch_attempt` constraints against the running PostgreSQL, inside
+transactions that are rolled back:
+
+```bash
+set -a; source .env; set +a
+uv run pytest -m integration
+```
+
+CI runs them against a fresh PostgreSQL container after `make migrate`.
+
 ## Troubleshooting
 
 - Connection to `docker.sock` denied: check Docker Desktop WSL integration or

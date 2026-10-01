@@ -52,3 +52,10 @@ jobs:
 
       - name: Build application image
         run: docker build --tag mobility-app .
+
+      - name: Test database constraints
+        run: |
+          docker compose up -d --wait postgres
+          make migrate
+          set -a; . ./.env; set +a
+          uv run --locked pytest -m integration

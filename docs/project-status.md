@@ -37,8 +37,8 @@ fetch records. Stages 1 and 2 are complete.
   in logs and `metadata.fetch_attempt`.
 - Sources and URLs are fixed in code; only Mobilis is configured.
 - If the database write fails after an upload, that attempt is not recorded.
-- Ingestion tests use fakes for HTTP, S3 and PostgreSQL; table constraints are
-  only checked manually against the local database.
+- Ingestion tests use fakes for HTTP and S3; only the `fetch_attempt` table is
+  tested against a real database.
 - MinIO Community is archived upstream and is used here only as local
   S3-compatible storage.
 - The profiling sample is short and does not cover overnight service or daylight
@@ -46,7 +46,7 @@ fetch records. Stages 1 and 2 are complete.
 
 ## Next
 
-Test `metadata.fetch_attempt` constraints against a real database, then
-collect a longer Mobilis observation period.
+Collect a longer Mobilis observation period, including a service date change,
+and add a freshness check for the realtime feeds.
 Open questions: service date resolution, interpretation of vehicle states and
 the accuracy of arrival estimates.

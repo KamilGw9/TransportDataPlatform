@@ -1,0 +1,123 @@
+"""Check metadata.fetch_attempt constraints against the local PostgreSQL.
+
+Run with the services from make up and the variables from .env loaded:
+    set -a; source .env; set +a
+    uv run pytest -m integration
+"""
+
+import os
+from dataclasses import replace
+from datetime import UTC, datetime
+
+import psycopg
+import pytest
+from psycopg.errors import CheckViolation
+
+from mobility.ingestion.archive import FetchAttempt, connect_postgres, record_attempt
+
+pytestmark = pytest.mark.integration
+
+SOURCE_ID = "integration_test"
+
+STORED = FetchAttempt(
+    source_id=SOURCE_ID,
+    url="https://example.test/feed.pb",
+    fetched_at=datetime(2026, 10, 1, 12, 0, tzinfo=UTC),
+    status="stored",
+    http_status=200,
+    size_bytes=15,
+    sha256="a" * 64,
+    object_key="raw/gtfs_rt/source_id=integration_test/date=2026-10-01/sha256=a.pb",
+)
+
+
+@pytest.fixture
+def conn():
+    if "POSTGRES_PASSWORD" not in os.environ:
+        pytest.fail("Load .env first: set -a; source .env; set +a")
+    with connect_postgres() as conn:
+        # Every test runs in a transaction that is rolled back, so no rows stay.
+        with conn.transaction(force_rollback=True):
+            yield conn
+
+
+def stored_rows(conn: psycopg.Connection) -> list[tuple]:
+    return conn.execute(
+        """
+        SELECT source_id, url, fetched_at, status, http_status, size_bytes,
+               sha256, object_key, error
+        FROM metadata.fetch_attempt
+        WHERE source_id = %s
+        """,
+        (SOURCE_ID,),
+    ).fetchall()
+
+
+def test_stored_attempt_round_trips(conn: psycopg.Connection) -> None:
+    record_attempt(conn, STORED)
+
+    assert stored_rows(conn) == [
+        (
+            STORED.source_id,
+            STORED.url,
+            STORED.fetched_at,
+            "stored",
+            200,
+            15,
+            STORED.sha256,
+            STORED.object_key,
+            None,
+        )
+    ]
+
+
+def test_failed_upload_keeps_known_hash_and_key(conn: psycopg.Connection) -> None:
+    record_attempt(conn, replace(STORED, status="failed", error="ClientError: 403"))
+
+    [row] = stored_rows(conn)
+    assert row[3] == "failed"
+    assert row[6] == STORED.sha256
+
+
+def test_failed_download_needs_only_an_error(conn: psycopg.Connection) -> None:
+    failed = FetchAttempt(
+        source_id=SOURCE_ID,
+        url=STORED.url,
+        fetched_at=STORED.fetched_at,
+        status="failed",
+        error="ReadTimeout: timed out",
+    )
+
+    record_attempt(conn, failed)
+
+    assert len(stored_rows(conn)) == 1
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"status": "failed"},
+        {"error": "unexpected error on success"},
+        {"sha256": None},
+        {"object_key": None},
+        {"size_bytes": None},
+        {"size_bytes": -1},
+        {"sha256": "ABC"},
+        {"status": "skipped"},
+    ],
+    ids=[
+        "failed-without-error",
+        "stored-with-error",
+        "stored-without-hash",
+        "stored-without-key",
+        "stored-without-size",
+        "negative-size",
+        "malformed-hash",
+        "unknown-status",
+    ],
+)
+def test_table_rejects_inconsistent_attempt(
+    conn: psycopg.Connection, changes: dict
+) -> None:
+    with pytest.raises(CheckViolation):
+        record_attempt(conn, replace(STORED, **changes))

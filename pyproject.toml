@@ -35,4 +35,5 @@ dev = [
 
   [tool.pytest.ini_options]
   testpaths = ["tools/feed_profiler", "tests"]
-  addopts = "--strict-config --strict-markers"
+  addopts = "--strict-config --strict-markers -m 'not integration'"
+  markers = ["integration: needs the local PostgreSQL from make up"]

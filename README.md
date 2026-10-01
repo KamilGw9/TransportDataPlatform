@@ -39,6 +39,7 @@ uv sync --locked
 uv run mobility --help
 uv run mobility --version
 uv run pytest
+uv run pytest -m integration   # needs make up and the variables from .env
 uv run ruff check src/ tools/feed_profiler/
 uv run ruff format --check src/ tools/feed_profiler/
 ```
