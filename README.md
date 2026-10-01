@@ -21,6 +21,7 @@ windows from vehicle states still requires validation.
 make setup
 make up
 make check-infra
+make collect    # optional: collect GTFS-RT snapshots every 30 s
 ```
 
 PostgreSQL is available at `127.0.0.1:5432`; the S3 endpoint is

@@ -55,6 +55,34 @@ services:
       - ./infrastructure/docker/minio/init.sh:/init.sh:ro
     entrypoint: ["/bin/sh", "/init.sh"]
 
+  collector:
+    build: .
+    image: mobility-app
+    restart: unless-stopped
+    command: ["mobility", "collect-realtime"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      # Container-to-container addresses; the host ports in .env do not apply.
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:?Run make setup}
+      POSTGRES_USER: ${POSTGRES_USER:?Run make setup}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run make setup}
+      S3_ENDPOINT_URL: http://minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Run make setup}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Run make setup}
+      S3_BUCKET: ${S3_BUCKET:-mobility}
+      S3_REGION: ${S3_REGION:-us-east-1}
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
 volumes:
   postgres_data:
   minio_data:

@@ -29,7 +29,10 @@ _NOT_FOUND_CODES = {"404", "NoSuchKey", "NotFound"}
 def make_s3_client():
     return boto3.client(
         "s3",
-        endpoint_url=f"http://127.0.0.1:{os.environ.get('MINIO_API_PORT', '9000')}",
+        endpoint_url=os.environ.get(
+            "S3_ENDPOINT_URL",
+            f"http://127.0.0.1:{os.environ.get('MINIO_API_PORT', '9000')}",
+        ),
         aws_access_key_id=os.environ["MINIO_ROOT_USER"],
         aws_secret_access_key=os.environ["MINIO_ROOT_PASSWORD"],
         region_name=os.environ.get("S3_REGION", "us-east-1"),
@@ -180,7 +183,7 @@ def connect_postgres() -> psycopg.Connection:
     # Autocommit: no transaction stays open while the connection waits for the
     # download and upload; each INSERT is committed immediately.
     return psycopg.connect(
-        host="127.0.0.1",
+        host=os.environ.get("POSTGRES_HOST", "127.0.0.1"),
         port=os.environ.get("POSTGRES_PORT", "5432"),
         dbname=os.environ.get("POSTGRES_DB", "mobility"),
         user=os.environ.get("POSTGRES_USER", "mobility"),

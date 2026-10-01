@@ -95,7 +95,8 @@ uv run mobility archive-schedule
 
 The command needs `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` and `POSTGRES_PASSWORD`
 in the environment; `MINIO_API_PORT`, `S3_REGION`, `S3_BUCKET`, `POSTGRES_PORT`,
-`POSTGRES_DB` and `POSTGRES_USER` default to the `.env.example` values. It
+`POSTGRES_DB` and `POSTGRES_USER` default to the `.env.example` values.
+`POSTGRES_HOST` and `S3_ENDPOINT_URL` default to the loopback addresses above. It
 downloads `GTFS_KRK_M.zip`, rejects invalid ZIP data and stores the exact bytes
 under `raw/gtfs/source_id=krakow_ztp_m/sha256=<hash>/schedule.zip`. Running it
 again with an unchanged feed skips the upload. Objects can be inspected in the
@@ -133,6 +134,21 @@ uv run mobility collect-realtime --interval 30
 Each cycle archives all three feeds and opens a new database connection, so a
 PostgreSQL restart only skips the cycles while the database is down. Ctrl+C or
 SIGTERM stops the collector after the current cycle.
+
+## Run the collector as a service
+
+```bash
+make collect
+make logs
+make collect-stop
+```
+
+`make collect` runs `make up`, builds the application image from the root
+`Dockerfile` and starts the `collector` service, which runs
+`mobility collect-realtime` and restarts unless stopped. Inside the Compose network
+it reaches `postgres:5432` and `http://minio:9000`. Its logs are rotated at
+10 MB, three files. `make collect-stop` stops only the collector; `make down`
+stops everything.
 
 ## Troubleshooting
 

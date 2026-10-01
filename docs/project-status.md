@@ -22,7 +22,7 @@ fetch records. Stages 1 and 2 are complete.
   (`mobility archive-realtime`): each run validates the protobuf message and
   stores it under `raw/gtfs_rt/source_id=<feed>/date=<UTC date>/sha256=<hash>.pb`.
   `mobility collect-realtime` repeats this every 30 seconds until stopped and
-  survives PostgreSQL restarts.
+  survives PostgreSQL restarts; `make collect` runs it as a Compose service.
 - Fetch records: every run writes one row to `metadata.fetch_attempt` with
   status `stored`, `unchanged` or `failed`, including the error for failures
   ([ADR 003](adr/003-fetch-records.md)). Schema changes are applied by
@@ -33,7 +33,8 @@ fetch records. Stages 1 and 2 are complete.
 
 ## Limitations
 
-- The collector runs in the foreground; it is not yet a managed service.
+- Nothing alerts on collector failures or stale feeds; they are visible only
+  in logs and `metadata.fetch_attempt`.
 - Sources and URLs are fixed in code; only Mobilis is configured.
 - If the database write fails after an upload, that attempt is not recorded.
 - Ingestion tests use fakes for HTTP, S3 and PostgreSQL; table constraints are
@@ -45,6 +46,7 @@ fetch records. Stages 1 and 2 are complete.
 
 ## Next
 
-Run the collector as a Docker Compose service.
+Test `metadata.fetch_attempt` constraints against a real database, then
+collect a longer Mobilis observation period.
 Open questions: service date resolution, interpretation of vehicle states and
 the accuracy of arrival estimates.
