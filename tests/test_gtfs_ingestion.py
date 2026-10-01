@@ -12,6 +12,7 @@ from google.transit import gtfs_realtime_pb2
 from mobility.ingestion import gtfs_rt
 from mobility.ingestion.archive import (
     FetchAttempt,
+    archive_and_record,
     fetch_data,
     record_attempt,
     sha256_hex,
@@ -358,3 +359,37 @@ def test_archive_snapshot_records_invalid_feed(
     assert attempt.status == "failed"
     assert "caused by DecodeError" in attempt.error
     assert s3.puts == []
+
+
+def fixed_attempts(*statuses: str):
+    attempts = {
+        f"feed_{index}": FetchAttempt(
+            source_id=f"feed_{index}",
+            url=URL,
+            fetched_at=datetime(2026, 10, 1, tzinfo=UTC),
+            status=status,
+            error="RuntimeError: boom" if status == "failed" else None,
+        )
+        for index, status in enumerate(statuses)
+    }
+
+    def archive_feed(client, bucket: str, source_id: str, url: str) -> FetchAttempt:
+        return attempts[source_id]
+
+    return {source_id: URL for source_id in attempts}, archive_feed
+
+
+def test_archive_and_record_reports_success() -> None:
+    conn = FakeConnection()
+    feeds, archive_feed = fixed_attempts("stored", "unchanged")
+
+    assert archive_and_record(None, "bucket", conn, feeds, archive_feed) is True
+    assert len(conn.executed) == 2
+
+
+def test_archive_and_record_continues_after_failed_feed() -> None:
+    conn = FakeConnection()
+    feeds, archive_feed = fixed_attempts("failed", "stored")
+
+    assert archive_and_record(None, "bucket", conn, feeds, archive_feed) is False
+    assert [params[0] for _, params in conn.executed] == ["feed_0", "feed_1"]

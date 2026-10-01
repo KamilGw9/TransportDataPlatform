@@ -42,12 +42,14 @@ uv run ruff check src/ tools/feed_profiler/
 uv run ruff format --check src/ tools/feed_profiler/
 ```
 
-Archive the current Mobilis schedule (requires running services, see
+Archive the current Mobilis schedule and one snapshot of each realtime feed
+(requires running services, see
 [local setup](docs/local-development.md#archive-the-gtfs-schedule)):
 
 ```bash
 set -a; source .env; set +a
-uv run python -m mobility.ingestion.gtfs
+uv run mobility archive-schedule
+uv run mobility archive-realtime
 ```
 
 Project documentation, code identifiers, and commit messages are written in English.

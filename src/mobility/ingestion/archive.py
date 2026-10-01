@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -8,6 +9,8 @@ import boto3
 import httpx
 import psycopg
 from botocore.exceptions import ClientError
+
+logger = logging.getLogger(__name__)
 
 
 def fetch_data(url: str) -> httpx.Response:
@@ -145,6 +148,32 @@ def record_attempt(conn, attempt: FetchAttempt) -> None:
             attempt.error,
         ),
     )
+
+
+def archive_and_record(
+    client,
+    bucket: str,
+    conn,
+    feeds: dict[str, str],
+    archive_feed: Callable[..., FetchAttempt],
+) -> bool:
+    """Archive each feed and record every attempt; return False if any failed."""
+    ok = True
+    for source_id, url in feeds.items():
+        attempt = archive_feed(client, bucket, source_id, url)
+        record_attempt(conn, attempt)
+        if attempt.status == "failed":
+            logger.error("%s: failed: %s", source_id, attempt.error)
+            ok = False
+        else:
+            logger.info(
+                "%s: %s, %d bytes, %s",
+                source_id,
+                attempt.status,
+                attempt.size_bytes,
+                attempt.object_key,
+            )
+    return ok
 
 
 def connect_postgres() -> psycopg.Connection:

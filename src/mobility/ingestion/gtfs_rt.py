@@ -1,17 +1,9 @@
-import os
-import sys
 from datetime import UTC, datetime
 
 from google.protobuf.message import DecodeError
 from google.transit import gtfs_realtime_pb2
 
-from mobility.ingestion.archive import (
-    FetchAttempt,
-    archive,
-    connect_postgres,
-    make_s3_client,
-    record_attempt,
-)
+from mobility.ingestion.archive import FetchAttempt, archive
 
 MOBILIS_FEEDS = {
     "krakow_ztp_m_vehicle_positions": "https://gtfs.ztp.krakow.pl/VehiclePositions_M.pb",
@@ -50,20 +42,3 @@ def archive_snapshot(client, bucket: str, source_id: str, url: str) -> FetchAtte
             source_id, sha256, fetched_at
         ),
     )
-
-
-if __name__ == "__main__":
-    client = make_s3_client()
-    bucket = os.environ.get("S3_BUCKET", "mobility")
-    failed = False
-
-    with connect_postgres() as conn:
-        for source_id, url in MOBILIS_FEEDS.items():
-            attempt = archive_snapshot(client, bucket, source_id, url)
-            record_attempt(conn, attempt)
-            print(f"{source_id}: {attempt.status}")
-            if attempt.status == "failed":
-                print(f"Error: {attempt.error}", file=sys.stderr)
-                failed = True
-
-    sys.exit(1 if failed else 0)

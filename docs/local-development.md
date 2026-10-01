@@ -90,10 +90,10 @@ Expected result: `PASS: all schemas exist; SQL row and S3 object survived contai
 
 ```bash
 set -a; source .env; set +a
-uv run python -m mobility.ingestion.gtfs
+uv run mobility archive-schedule
 ```
 
-The script needs `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` and `POSTGRES_PASSWORD`
+The command needs `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` and `POSTGRES_PASSWORD`
 in the environment; `MINIO_API_PORT`, `S3_REGION`, `S3_BUCKET`, `POSTGRES_PORT`,
 `POSTGRES_DB` and `POSTGRES_USER` default to the `.env.example` values. It
 downloads `GTFS_KRK_M.zip`, rejects invalid ZIP data and stores the exact bytes
@@ -114,7 +114,7 @@ LIMIT 10;
 ## Archive GTFS-RT snapshots
 
 ```bash
-uv run python -m mobility.ingestion.gtfs_rt
+uv run mobility archive-realtime
 ```
 
 One run downloads the Mobilis VehiclePositions, TripUpdates and ServiceAlerts

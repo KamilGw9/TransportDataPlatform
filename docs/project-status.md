@@ -14,12 +14,12 @@ fetch records. Stages 1 and 2 are complete.
   health checks (`make up`, `make down`). `make check-infra` confirms that a SQL
   row and an S3 object survive container recreation. Storage choices are in
   [ADR 002](adr/002-local-storage.md).
-- RAW schedule archiving for `krakow_ztp_m` (`mobility.ingestion.gtfs`). The ZIP
+- RAW schedule archiving for `krakow_ztp_m` (`mobility archive-schedule`). The ZIP
   is validated, hashed with SHA-256 and stored under
   `raw/gtfs/source_id=krakow_ztp_m/sha256=<hash>/schedule.zip`. An existing
   object is not rewritten, so repeated runs are idempotent.
 - RAW GTFS-RT archiving for the three Mobilis feeds
-  (`mobility.ingestion.gtfs_rt`): each run validates the protobuf message and
+  (`mobility archive-realtime`): each run validates the protobuf message and
   stores it under `raw/gtfs_rt/source_id=<feed>/date=<UTC date>/sha256=<hash>.pb`.
 - Fetch records: every run writes one row to `metadata.fetch_attempt` with
   status `stored`, `unchanged` or `failed`, including the error for failures
@@ -33,8 +33,7 @@ fetch records. Stages 1 and 2 are complete.
 
 - GTFS-RT snapshots are fetched once per run; there is no continuous collection
   yet.
-- Ingestion runs as module scripts with fixed sources and URLs, not as CLI
-  commands.
+- Sources and URLs are fixed in code; only Mobilis is configured.
 - If the database write fails after an upload, that attempt is not recorded.
 - Ingestion tests use fakes for HTTP, S3 and PostgreSQL; table constraints are
   only checked manually against the local database.
@@ -45,6 +44,6 @@ fetch records. Stages 1 and 2 are complete.
 
 ## Next
 
-Expose ingestion as CLI commands, then collect GTFS-RT snapshots continuously.
+Collect GTFS-RT snapshots continuously.
 Open questions: service date resolution, interpretation of vehicle states and
 the accuracy of arrival estimates.
