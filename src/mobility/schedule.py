@@ -1,8 +1,16 @@
 import csv
 import io
+import logging
 import zipfile
 from collections.abc import Callable, Iterator
-from datetime import date, datetime
+from dataclasses import dataclass
+from datetime import UTC, date, datetime
+
+from psycopg import sql
+
+from mobility.ingestion.archive import describe_error, sha256_hex
+
+logger = logging.getLogger(__name__)
 
 Row = dict[str, str]
 
@@ -131,3 +139,100 @@ def parse_file(
                 yield to_row(row)
             except (KeyError, ValueError) as e:
                 raise ValueError(f"{file_name} line {reader.line_num}: {e!r}") from e
+
+
+@dataclass(frozen=True)
+class ScheduleLoad:
+    schedule_sha256: str
+    object_key: str
+    started_at: datetime
+    status: str
+    error: str | None = None
+
+
+_SELECT_LATEST_VERSION = """
+SELECT sha256, object_key
+FROM metadata.fetch_attempt
+WHERE source_id = %s AND status <> 'failed'
+ORDER BY fetched_at DESC
+LIMIT 1
+"""
+
+
+def latest_schedule_version(conn, source_id: str) -> tuple[str, str] | None:
+    """Return the hash and object key of the most recently archived schedule."""
+    return conn.execute(_SELECT_LATEST_VERSION, (source_id,)).fetchone()
+
+
+def is_loaded(conn, schedule_sha256: str) -> bool:
+    row = conn.execute(
+        """
+        SELECT 1 FROM metadata.schedule_load
+        WHERE schedule_sha256 = %s AND status = 'loaded'
+        """,
+        (schedule_sha256,),
+    ).fetchone()
+    return row is not None
+
+
+def copy_rows(conn, table: str, schedule_sha256: str, rows: Iterator[tuple]) -> int:
+    statement = sql.SQL("COPY staging.{} FROM STDIN").format(sql.Identifier(table))
+    count = 0
+    with conn.cursor() as cursor, cursor.copy(statement) as copy:
+        for row in rows:
+            copy.write_row((schedule_sha256, *row))
+            count += 1
+    return count
+
+
+_INSERT_LOAD = """
+INSERT INTO metadata.schedule_load
+    (schedule_sha256, object_key, started_at, status, error)
+VALUES (%s, %s, %s, %s, %s)
+"""
+
+
+def record_load(conn, load: ScheduleLoad) -> None:
+    conn.execute(
+        _INSERT_LOAD,
+        (
+            load.schedule_sha256,
+            load.object_key,
+            load.started_at,
+            load.status,
+            load.error,
+        ),
+    )
+
+
+def load_schedule(
+    client, bucket: str, conn, schedule_sha256: str, object_key: str
+) -> ScheduleLoad:
+    """Load one archived schedule version into staging and record the attempt.
+
+    Never raises: a failure rolls back every row of the version and is
+    recorded as a failed load.
+    """
+    started_at = datetime.now(UTC)
+    try:
+        data = client.get_object(Bucket=bucket, Key=object_key)["Body"].read()
+        if sha256_hex(data) != schedule_sha256:
+            raise ValueError(f"{object_key} does not match its SHA-256")
+        loaded = ScheduleLoad(schedule_sha256, object_key, started_at, "loaded")
+        # The rows and the "loaded" record commit together, so a version is
+        # either complete or absent.
+        with zipfile.ZipFile(io.BytesIO(data)) as zip_file, conn.transaction():
+            for file_name, table, to_row in SCHEDULE_FILES:
+                rows = parse_file(zip_file, file_name, to_row)
+                count = copy_rows(conn, table, schedule_sha256, rows)
+                logger.info("%s: %d rows", file_name, count)
+            record_load(conn, loaded)
+    except Exception as e:
+        # Any failure must still produce a record, written after the rollback
+        # so that it is kept.
+        failed = ScheduleLoad(
+            schedule_sha256, object_key, started_at, "failed", describe_error(e)
+        )
+        record_load(conn, failed)
+        return failed
+    return loaded
