@@ -33,13 +33,17 @@ def run_archive(
         return archive_and_record(client, bucket, conn, feeds, archive_feed)
 
 
-def collect_realtime(client, bucket: str, interval: float) -> None:
+def stop_on_signals() -> threading.Event:
     stop = threading.Event()
     # docker stop sends SIGTERM, Ctrl+C sends SIGINT; both end the loop after
     # the current cycle.
     for signum in (signal.SIGINT, signal.SIGTERM):
         signal.signal(signum, lambda *_: stop.set())
+    return stop
 
+
+def collect_realtime(client, bucket: str, interval: float) -> None:
+    stop = stop_on_signals()
     logger.info(
         "Collecting %d GTFS-RT feeds every %g s",
         len(gtfs_rt.MOBILIS_FEEDS),
