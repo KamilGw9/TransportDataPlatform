@@ -1,5 +1,18 @@
 name: urban-mobility
 
+# Container-to-container addresses; the host ports in .env do not apply.
+x-app-environment: &app-environment
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: ${POSTGRES_DB:?Run make setup}
+  POSTGRES_USER: ${POSTGRES_USER:?Run make setup}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run make setup}
+  S3_ENDPOINT_URL: http://minio:9000
+  MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Run make setup}
+  MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Run make setup}
+  S3_BUCKET: ${S3_BUCKET:-mobility}
+  S3_REGION: ${S3_REGION:-us-east-1}
+
 services:
   postgres:
     image: postgres:17.11-bookworm@sha256:639ab7ceb90e13123085b741fb31ef493fba25463002f6da665352e7b534b652
@@ -65,18 +78,7 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
-    environment:
-      # Container-to-container addresses; the host ports in .env do not apply.
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: "5432"
-      POSTGRES_DB: ${POSTGRES_DB:?Run make setup}
-      POSTGRES_USER: ${POSTGRES_USER:?Run make setup}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run make setup}
-      S3_ENDPOINT_URL: http://minio:9000
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Run make setup}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Run make setup}
-      S3_BUCKET: ${S3_BUCKET:-mobility}
-      S3_REGION: ${S3_REGION:-us-east-1}
+    environment: *app-environment
     logging:
       driver: json-file
       options:
