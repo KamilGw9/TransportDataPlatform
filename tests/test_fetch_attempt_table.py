@@ -1,4 +1,4 @@
-"""Check metadata.fetch_attempt constraints against the local PostgreSQL.
+"""Check metadata.fetch_attempt and its views against the local PostgreSQL.
 
 Run with the services from make up and the variables from .env loaded:
     set -a; source .env; set +a
@@ -7,13 +7,14 @@ Run with the services from make up and the variables from .env loaded:
 
 import os
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import psycopg
 import pytest
 from psycopg.errors import CheckViolation
 
 from mobility.ingestion.archive import FetchAttempt, connect_postgres, record_attempt
+from mobility.ingestion.freshness import FeedFreshness, load_freshness
 
 pytestmark = pytest.mark.integration
 
@@ -121,3 +122,57 @@ def test_table_rejects_inconsistent_attempt(
 ) -> None:
     with pytest.raises(CheckViolation):
         record_attempt(conn, replace(STORED, **changes))
+
+
+def freshness(conn: psycopg.Connection) -> tuple:
+    return conn.execute(
+        """
+        SELECT last_attempt_at, last_success_at, last_change_at
+        FROM metadata.feed_freshness
+        WHERE source_id = %s
+        """,
+        (SOURCE_ID,),
+    ).fetchone()
+
+
+def test_freshness_ignores_failures_and_daily_restore(
+    conn: psycopg.Connection,
+) -> None:
+    t0 = STORED.fetched_at
+    minute = timedelta(minutes=1)
+    failed = FetchAttempt(
+        source_id=SOURCE_ID,
+        url=STORED.url,
+        fetched_at=t0 + minute,
+        status="failed",
+        error="ReadTimeout: timed out",
+    )
+    for attempt in [
+        STORED,
+        failed,
+        replace(STORED, fetched_at=t0 + 2 * minute),
+        replace(failed, fetched_at=t0 + 3 * minute),
+    ]:
+        record_attempt(conn, attempt)
+
+    assert freshness(conn) == (t0 + 3 * minute, t0 + 2 * minute, t0)
+
+
+def test_freshness_tracks_new_content(conn: psycopg.Connection) -> None:
+    changed_at = STORED.fetched_at + timedelta(seconds=30)
+    record_attempt(conn, STORED)
+    record_attempt(conn, replace(STORED, fetched_at=changed_at, sha256="b" * 64))
+
+    assert freshness(conn) == (changed_at, changed_at, changed_at)
+
+
+def test_load_freshness_reports_never_fetched_source(
+    conn: psycopg.Connection,
+) -> None:
+    record_attempt(conn, STORED)
+    at = STORED.fetched_at
+
+    assert load_freshness(conn, [SOURCE_ID, "never_fetched"]) == [
+        FeedFreshness(SOURCE_ID, at, at, at),
+        FeedFreshness("never_fetched", None, None, None),
+    ]
