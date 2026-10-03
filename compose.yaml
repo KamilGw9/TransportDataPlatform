@@ -85,6 +85,23 @@ services:
         max-size: 10m
         max-file: "3"
 
+  schedule-collector:
+    build: .
+    image: mobility-app
+    restart: unless-stopped
+    command: ["mobility", "collect-schedule"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment: *app-environment
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
 volumes:
   postgres_data:
   minio_data:
