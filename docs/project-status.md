@@ -2,9 +2,9 @@
 
 Last updated: 2026-10-03.
 
-Current stage: 3 of the [project plan](project-plan.md), GTFS/RT archiving with
-fetch records, with the first step of stage 4 (schedule in staging) started.
-Stages 1 and 2 are complete.
+Current stage: 4 of the [project plan](project-plan.md), realtime-to-schedule
+matching. The schedule and vehicle positions are in staging and matched by trip;
+validation and analytical models are not started. Stages 1 to 3 are complete.
 
 ## What works
 
@@ -40,6 +40,15 @@ Stages 1 and 2 are complete.
   snapshot from 2026-10-03 were found in the schedule archived the same day.
   `mobility collect-schedule` archives and loads the schedule every hour;
   `make collect` runs it as a second Compose service.
+- Vehicle positions: `mobility load-vehicle-positions` decodes every stored
+  VehiclePositions snapshot not yet loaded into `staging.vehicle_position`, one
+  transaction per snapshot, and records each attempt in
+  `metadata.vehicle_position_load`. The header timestamp is kept per snapshot.
+  `core.vehicle_position_match` matches each position to the schedule version
+  that was the latest archived one when the snapshot was downloaded. Of 45,373
+  positions collected by 2026-10-03, 71.5% matched a trip: none between 08:00
+  and 09:44 UTC, when the feed already used trips from a schedule that had not
+  been archived yet, and all of them otherwise, always with the same route.
 - Feed profiler with [A/M/T reports](../tools/feed_profiler/data-profile.md),
   which led to starting with Mobilis buses
   ([ADR 001](adr/001-krakow-m-first.md)).
@@ -49,19 +58,27 @@ Stages 1 and 2 are complete.
 - Nothing runs `check-freshness` on a schedule or sends alerts, so a stopped
   collector is noticed only when someone checks.
 - Freshness is judged by changes of the content hash. The GTFS-RT header
-  timestamp is not stored, so the delay between generating and publishing a
-  snapshot is not measured.
+  timestamp is stored only for VehiclePositions loaded into staging; on those,
+  a snapshot reached the collector a median of 8 s after it was generated.
 - A new schedule reaches staging up to an hour after Mobilis publishes it, and
   only while the schedule collector runs. Realtime trip IDs did not match a
   schedule archived three days earlier, so a stopped schedule collector breaks
   matching within days. `check-freshness` covers only the realtime feeds.
 - Staging keeps only the schedule columns needed for matching; shapes, agency
-  and feed info stay in the RAW ZIP. Choosing the schedule version that applies
-  on a given service date is not implemented.
+  and feed info stay in the RAW ZIP.
+- Mobilis does not send `start_date` in trip descriptors, and the service date of
+  a trip is not inferred yet. Matching uses the schedule version known at
+  download time, not the version that applies on the service date.
+- `load-vehicle-positions` runs only by hand. A snapshot that cannot be loaded is
+  retried, and recorded as failed again, on every run.
+- `core.vehicle_position_match` is a plain view, computed on every query; it
+  takes about 2 s over 45,000 positions, while a day of collection adds about
+  230,000. TripUpdates and ServiceAlerts are archived but not decoded.
 - Sources and URLs are fixed in code; only Mobilis is configured.
 - If the database write fails after an upload, that attempt is not recorded.
 - Ingestion tests use fakes for HTTP and S3; only the database tables, the
-  freshness view and schedule loading are tested against a real database.
+  freshness view, schedule and vehicle position loading and the matching view
+  are tested against a real database.
 - MinIO Community is archived upstream and is used here only as local
   S3-compatible storage.
 - The profiling sample is short and does not cover overnight service or daylight
@@ -69,9 +86,8 @@ Stages 1 and 2 are complete.
 
 ## Next
 
-Decode vehicle positions into staging and measure how many of them match the
-schedule. The collector has been
-running since 2026-10-03 to cover a longer observation period, including a
-service date change.
-Open questions: service date resolution, interpretation of vehicle states and
-the accuracy of arrival estimates.
+Infer the service date of each matched trip, so that a position can be compared
+with the scheduled stop times. The collectors have been running since
+2026-10-03; the next measurement should cover a service date change after
+midnight. Open questions: interpretation of vehicle states and the accuracy of
+arrival estimates.
