@@ -7,7 +7,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from importlib.metadata import version
 
-from mobility import schedule
+from mobility import schedule, vehicle_positions
 from mobility.ingestion import gtfs, gtfs_rt
 from mobility.ingestion.archive import (
     FetchAttempt,
@@ -97,6 +97,27 @@ def load_latest_schedule(client, bucket: str) -> bool:
     return True
 
 
+def load_vehicle_positions(client, bucket: str) -> bool:
+    with connect_postgres() as conn:
+        snapshots = vehicle_positions.pending_snapshots(
+            conn, vehicle_positions.SOURCE_ID
+        )
+        failed = 0
+        for snapshot_sha256, object_key in snapshots:
+            load = vehicle_positions.load_snapshot(
+                client, bucket, conn, snapshot_sha256, object_key
+            )
+            if load.status == "failed":
+                logger.error("%s: load failed: %s", object_key, load.error)
+                failed += 1
+    logger.info(
+        "Loaded %d vehicle position snapshots, %d failed",
+        len(snapshots) - failed,
+        failed,
+    )
+    return failed == 0
+
+
 def refresh_schedule(client, bucket: str) -> bool:
     archived = run_archive(client, bucket, gtfs.MOBILIS_SCHEDULE, gtfs.archive_schedule)
     # Load even after a failed download: a version archived earlier may not
@@ -161,6 +182,10 @@ def main(argv: list[str] | None = None) -> int:
         help="Load the latest archived Mobilis schedule into staging tables",
     )
     commands.add_parser(
+        "load-vehicle-positions",
+        help="Load archived Mobilis vehicle positions not yet in staging tables",
+    )
+    commands.add_parser(
         "check-freshness",
         help="Exit with 1 if a Mobilis GTFS-RT feed has not changed recently",
     )
@@ -191,6 +216,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if ok else 1
     if args.command == "load-schedule":
         return 0 if load_latest_schedule(client, bucket) else 1
+    if args.command == "load-vehicle-positions":
+        return 0 if load_vehicle_positions(client, bucket) else 1
     if args.command == "collect-schedule":
         collect_schedule(client, bucket, args.interval)
         return 0

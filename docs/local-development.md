@@ -174,6 +174,33 @@ runs `mobility collect-realtime` and `schedule-collector` runs
 `postgres:5432` and `http://minio:9000`. Their logs are rotated at 10 MB, three
 files. `make collect-stop` stops both collectors; `make down` stops everything.
 
+## Load vehicle positions and match them to the schedule
+
+```bash
+uv run mobility load-vehicle-positions
+```
+
+The command finds stored VehiclePositions snapshots in `metadata.fetch_attempt`
+that have no `loaded` row in `metadata.vehicle_position_load`, reads each from S3,
+checks it against its SHA-256 and loads it in its own transaction: the header
+timestamp goes to `staging.vehicle_position_snapshot` and one row per vehicle to
+`staging.vehicle_position`. A failed snapshot is recorded with the error and the
+others still load. Running the command again loads only new snapshots. Fields
+that the feed leaves unset are stored as `NULL`, not as protobuf defaults.
+
+`core.vehicle_position_match` joins each position to the schedule version that
+was the latest archived one when the snapshot was first downloaded. Share of
+positions whose trip was found, per hour:
+
+```sql
+SELECT date_trunc('hour', first_fetched_at) AS hour,
+       count(*) AS positions,
+       round(100.0 * count(*) FILTER (WHERE trip_found) / count(*), 1) AS matched_pct
+FROM core.vehicle_position_match
+GROUP BY 1
+ORDER BY 1;
+```
+
 ## Check feed freshness
 
 ```bash
