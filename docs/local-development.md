@@ -51,8 +51,9 @@ to loopback. Use local `.env` values for credentials; do not paste them into log
 PostgreSQL defaults to database/user `mobility`. `make postgres` opens psql using
 the configured values. Schemas:
 
-- `metadata`: fetch records (`metadata.fetch_attempt`), later file and processing records;
-- `staging`: future input tables;
+- `metadata`: fetch records (`metadata.fetch_attempt`) and schedule loads
+  (`metadata.schedule_load`);
+- `staging`: schedule versions loaded from the RAW ZIP (`staging.schedule_*`);
 - `core`: future normalized transport models;
 - `marts`: future analytical outputs.
 
@@ -112,6 +113,27 @@ ORDER BY fetched_at DESC
 LIMIT 10;
 ```
 
+## Load the schedule into staging
+
+```bash
+uv run mobility load-schedule
+```
+
+The command takes the most recently archived schedule from
+`metadata.fetch_attempt`, reads the ZIP from S3, checks it against its SHA-256 and
+copies routes, stops, trips, stop times and both calendar files into the
+`staging.schedule_*` tables. Every row carries `schedule_sha256`, so several
+versions are kept side by side. A version loads in one transaction together with
+its `loaded` row in `metadata.schedule_load`; a failure leaves no rows and is
+recorded as `failed` with the error. A version that is already loaded is
+skipped. Stop times are stored as seconds from the start of the service day,
+because GTFS times can exceed `24:00:00`.
+
+Mobilis publishes a new schedule every few days and realtime trip IDs follow the
+newest one, so run `archive-schedule` before `load-schedule`. Mobilis sets every
+weekday in `calendar.txt` to 0 and lists service days only in
+`calendar_dates.txt`.
+
 ## Archive GTFS-RT snapshots
 
 ```bash
@@ -168,8 +190,8 @@ Mobilis feeds change on every download because the header timestamp does.
 ## Database tests
 
 `make test` skips tests marked `integration`. They check the
-`metadata.fetch_attempt` constraints and the `metadata.feed_freshness` view
-against the running PostgreSQL, inside transactions that are rolled back:
+`metadata.fetch_attempt` constraints, the `metadata.feed_freshness` view and the
+schedule tables and loading against the running PostgreSQL, inside transactions that are rolled back:
 
 ```bash
 set -a; source .env; set +a
