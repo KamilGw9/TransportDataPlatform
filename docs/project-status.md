@@ -3,7 +3,8 @@
 Last updated: 2026-10-03.
 
 Current stage: 3 of the [project plan](project-plan.md), GTFS/RT archiving with
-fetch records. Stages 1 and 2 are complete.
+fetch records, with the first step of stage 4 (schedule in staging) started.
+Stages 1 and 2 are complete.
 
 ## What works
 
@@ -32,6 +33,11 @@ fetch records. Stages 1 and 2 are complete.
   `mobility check-freshness` exits with status 1 if any Mobilis GTFS-RT feed has
   not changed for 5 minutes, naming whether the collector, the download or the
   feed itself is the cause.
+- Schedule staging: `mobility load-schedule` loads the latest archived
+  schedule ZIP into `staging.schedule_*` tables keyed by the ZIP's SHA-256, in
+  one transaction, and records each load in `metadata.schedule_load`. Loading a
+  version twice is prevented by a unique index. All trip IDs in a realtime
+  snapshot from 2026-10-03 were found in the schedule archived the same day.
 - Feed profiler with [A/M/T reports](../tools/feed_profiler/data-profile.md),
   which led to starting with Mobilis buses
   ([ADR 001](adr/001-krakow-m-first.md)).
@@ -43,10 +49,16 @@ fetch records. Stages 1 and 2 are complete.
 - Freshness is judged by changes of the content hash. The GTFS-RT header
   timestamp is not stored, so the delay between generating and publishing a
   snapshot is not measured.
+- `archive-schedule` and `load-schedule` are run by hand. Mobilis replaces its
+  schedule every few days, and realtime trip IDs did not match a schedule
+  archived three days earlier.
+- Staging keeps only the schedule columns needed for matching; shapes, agency
+  and feed info stay in the RAW ZIP. Choosing the schedule version that applies
+  on a given service date is not implemented.
 - Sources and URLs are fixed in code; only Mobilis is configured.
 - If the database write fails after an upload, that attempt is not recorded.
-- Ingestion tests use fakes for HTTP and S3; only the `fetch_attempt` table and the
-  freshness view are tested against a real database.
+- Ingestion tests use fakes for HTTP and S3; only the database tables, the
+  freshness view and schedule loading are tested against a real database.
 - MinIO Community is archived upstream and is used here only as local
   S3-compatible storage.
 - The profiling sample is short and does not cover overnight service or daylight
@@ -54,7 +66,9 @@ fetch records. Stages 1 and 2 are complete.
 
 ## Next
 
-Collect a longer Mobilis observation period, including a service date change;
-the collector has been running since 2026-10-03.
+Run schedule archiving and loading daily, then decode vehicle positions into
+staging and measure how many of them match the schedule. The collector has been
+running since 2026-10-03 to cover a longer observation period, including a
+service date change.
 Open questions: service date resolution, interpretation of vehicle states and
 the accuracy of arrival estimates.

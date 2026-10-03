@@ -5,7 +5,6 @@ Run with the services from make up and the variables from .env loaded:
     uv run pytest -m integration
 """
 
-import os
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
@@ -13,7 +12,7 @@ import psycopg
 import pytest
 from psycopg.errors import CheckViolation
 
-from mobility.ingestion.archive import FetchAttempt, connect_postgres, record_attempt
+from mobility.ingestion.archive import FetchAttempt, record_attempt
 from mobility.ingestion.freshness import FeedFreshness, load_freshness
 
 pytestmark = pytest.mark.integration
@@ -30,16 +29,6 @@ STORED = FetchAttempt(
     sha256="a" * 64,
     object_key="raw/gtfs_rt/source_id=integration_test/date=2026-10-01/sha256=a.pb",
 )
-
-
-@pytest.fixture
-def conn():
-    if "POSTGRES_PASSWORD" not in os.environ:
-        pytest.fail("Load .env first: set -a; source .env; set +a")
-    with connect_postgres() as conn:
-        # Every test runs in a transaction that is rolled back, so no rows stay.
-        with conn.transaction(force_rollback=True):
-            yield conn
 
 
 def stored_rows(conn: psycopg.Connection) -> list[tuple]:

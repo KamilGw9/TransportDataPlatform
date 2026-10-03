@@ -7,6 +7,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from importlib.metadata import version
 
+from mobility import schedule
 from mobility.ingestion import gtfs, gtfs_rt
 from mobility.ingestion.archive import (
     FetchAttempt,
@@ -69,6 +70,29 @@ def check_freshness(conn) -> bool:
     return fresh
 
 
+def load_latest_schedule(client, bucket: str) -> bool:
+    with connect_postgres() as conn:
+        for source_id in gtfs.MOBILIS_SCHEDULE:
+            version = schedule.latest_schedule_version(conn, source_id)
+            if version is None:
+                logger.error(
+                    "%s: no archived schedule, run archive-schedule", source_id
+                )
+                return False
+            schedule_sha256, object_key = version
+            if schedule.is_loaded(conn, schedule_sha256):
+                logger.info("%s: %s already loaded", source_id, object_key)
+                continue
+            load = schedule.load_schedule(
+                client, bucket, conn, schedule_sha256, object_key
+            )
+            if load.status == "failed":
+                logger.error("%s: load failed: %s", source_id, load.error)
+                return False
+            logger.info("%s: loaded %s", source_id, object_key)
+    return True
+
+
 def positive_seconds(value: str) -> float:
     seconds = float(value)
     if seconds <= 0:
@@ -104,6 +128,10 @@ def main(argv: list[str] | None = None) -> int:
         help="Seconds between the starts of two cycles (default: 30)",
     )
     commands.add_parser(
+        "load-schedule",
+        help="Load the latest archived Mobilis schedule into staging tables",
+    )
+    commands.add_parser(
         "check-freshness",
         help="Exit with 1 if a Mobilis GTFS-RT feed has not changed recently",
     )
@@ -132,5 +160,7 @@ def main(argv: list[str] | None = None) -> int:
             client, bucket, gtfs_rt.MOBILIS_FEEDS, gtfs_rt.archive_snapshot
         )
         return 0 if ok else 1
+    if args.command == "load-schedule":
+        return 0 if load_latest_schedule(client, bucket) else 1
     collect_realtime(client, bucket, args.interval)
     return 0
