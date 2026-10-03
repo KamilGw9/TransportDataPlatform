@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-10-01.
+Last updated: 2026-10-03.
 
 Current stage: 3 of the [project plan](project-plan.md), GTFS/RT archiving with
 fetch records. Stages 1 and 2 are complete.
@@ -27,18 +27,26 @@ fetch records. Stages 1 and 2 are complete.
   status `stored`, `unchanged` or `failed`, including the error for failures
   ([ADR 003](adr/003-fetch-records.md)). Schema changes are applied by
   `make migrate` from numbered SQL files.
+- Freshness check: the `metadata.feed_freshness` view gives the latest attempt,
+  successful download and content change of each source, and
+  `mobility check-freshness` exits with status 1 if any Mobilis GTFS-RT feed has
+  not changed for 5 minutes, naming whether the collector, the download or the
+  feed itself is the cause.
 - Feed profiler with [A/M/T reports](../tools/feed_profiler/data-profile.md),
   which led to starting with Mobilis buses
   ([ADR 001](adr/001-krakow-m-first.md)).
 
 ## Limitations
 
-- Nothing alerts on collector failures or stale feeds; they are visible only
-  in logs and `metadata.fetch_attempt`.
+- Nothing runs `check-freshness` on a schedule or sends alerts, so a stopped
+  collector is noticed only when someone checks.
+- Freshness is judged by changes of the content hash. The GTFS-RT header
+  timestamp is not stored, so the delay between generating and publishing a
+  snapshot is not measured.
 - Sources and URLs are fixed in code; only Mobilis is configured.
 - If the database write fails after an upload, that attempt is not recorded.
-- Ingestion tests use fakes for HTTP and S3; only the `fetch_attempt` table is
-  tested against a real database.
+- Ingestion tests use fakes for HTTP and S3; only the `fetch_attempt` table and the
+  freshness view are tested against a real database.
 - MinIO Community is archived upstream and is used here only as local
   S3-compatible storage.
 - The profiling sample is short and does not cover overnight service or daylight
@@ -46,7 +54,7 @@ fetch records. Stages 1 and 2 are complete.
 
 ## Next
 
-Collect a longer Mobilis observation period, including a service date change,
-and add a freshness check for the realtime feeds.
+Collect a longer Mobilis observation period, including a service date change;
+the collector has been running since 2026-10-03.
 Open questions: service date resolution, interpretation of vehicle states and
 the accuracy of arrival estimates.
