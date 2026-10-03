@@ -38,6 +38,8 @@ Stages 1 and 2 are complete.
   one transaction, and records each load in `metadata.schedule_load`. Loading a
   version twice is prevented by a unique index. All trip IDs in a realtime
   snapshot from 2026-10-03 were found in the schedule archived the same day.
+  `mobility collect-schedule` archives and loads the schedule every hour;
+  `make collect` runs it as a second Compose service.
 - Feed profiler with [A/M/T reports](../tools/feed_profiler/data-profile.md),
   which led to starting with Mobilis buses
   ([ADR 001](adr/001-krakow-m-first.md)).
@@ -49,9 +51,10 @@ Stages 1 and 2 are complete.
 - Freshness is judged by changes of the content hash. The GTFS-RT header
   timestamp is not stored, so the delay between generating and publishing a
   snapshot is not measured.
-- `archive-schedule` and `load-schedule` are run by hand. Mobilis replaces its
-  schedule every few days, and realtime trip IDs did not match a schedule
-  archived three days earlier.
+- A new schedule reaches staging up to an hour after Mobilis publishes it, and
+  only while the schedule collector runs. Realtime trip IDs did not match a
+  schedule archived three days earlier, so a stopped schedule collector breaks
+  matching within days. `check-freshness` covers only the realtime feeds.
 - Staging keeps only the schedule columns needed for matching; shapes, agency
   and feed info stay in the RAW ZIP. Choosing the schedule version that applies
   on a given service date is not implemented.
@@ -66,8 +69,8 @@ Stages 1 and 2 are complete.
 
 ## Next
 
-Run schedule archiving and loading daily, then decode vehicle positions into
-staging and measure how many of them match the schedule. The collector has been
+Decode vehicle positions into staging and measure how many of them match the
+schedule. The collector has been
 running since 2026-10-03 to cover a longer observation period, including a
 service date change.
 Open questions: service date resolution, interpretation of vehicle states and
