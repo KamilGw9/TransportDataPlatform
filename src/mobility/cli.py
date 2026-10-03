@@ -4,6 +4,7 @@ import os
 import signal
 import threading
 from collections.abc import Callable
+from datetime import UTC, datetime
 from importlib.metadata import version
 
 from mobility.ingestion import gtfs, gtfs_rt
@@ -14,6 +15,7 @@ from mobility.ingestion.archive import (
     make_s3_client,
 )
 from mobility.ingestion.collector import collect
+from mobility.ingestion.freshness import load_freshness, stale_reason
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +56,19 @@ def collect_realtime(client, bucket: str, interval: float) -> None:
     logger.info("Collector stopped")
 
 
+def check_freshness(conn) -> bool:
+    now = datetime.now(UTC)
+    fresh = True
+    for feed in load_freshness(conn, list(gtfs_rt.MOBILIS_FEEDS)):
+        reason = stale_reason(feed, now)
+        if reason is None:
+            print(f"{feed.source_id}: ok")
+        else:
+            print(f"{feed.source_id}: STALE, {reason}")
+            fresh = False
+    return fresh
+
+
 def positive_seconds(value: str) -> float:
     seconds = float(value)
     if seconds <= 0:
@@ -88,6 +103,10 @@ def main(argv: list[str] | None = None) -> int:
         default=30.0,
         help="Seconds between the starts of two cycles (default: 30)",
     )
+    commands.add_parser(
+        "check-freshness",
+        help="Exit with 1 if a Mobilis GTFS-RT feed has not changed recently",
+    )
     args = parser.parse_args(argv)
     if args.command is None:
         parser.print_help()
@@ -98,6 +117,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     # httpx logs every request at INFO; our own line per attempt is enough.
     logging.getLogger("httpx").setLevel(logging.WARNING)
+
+    if args.command == "check-freshness":
+        with connect_postgres() as conn:
+            return 0 if check_freshness(conn) else 1
 
     client = make_s3_client()
     bucket = os.environ.get("S3_BUCKET", "mobility")

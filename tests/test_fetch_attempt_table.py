@@ -14,6 +14,7 @@ import pytest
 from psycopg.errors import CheckViolation
 
 from mobility.ingestion.archive import FetchAttempt, connect_postgres, record_attempt
+from mobility.ingestion.freshness import FeedFreshness, load_freshness
 
 pytestmark = pytest.mark.integration
 
@@ -163,3 +164,15 @@ def test_freshness_tracks_new_content(conn: psycopg.Connection) -> None:
     record_attempt(conn, replace(STORED, fetched_at=changed_at, sha256="b" * 64))
 
     assert freshness(conn) == (changed_at, changed_at, changed_at)
+
+
+def test_load_freshness_reports_never_fetched_source(
+    conn: psycopg.Connection,
+) -> None:
+    record_attempt(conn, STORED)
+    at = STORED.fetched_at
+
+    assert load_freshness(conn, [SOURCE_ID, "never_fetched"]) == [
+        FeedFreshness(SOURCE_ID, at, at, at),
+        FeedFreshness("never_fetched", None, None, None),
+    ]

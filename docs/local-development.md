@@ -150,11 +150,26 @@ it reaches `postgres:5432` and `http://minio:9000`. Its logs are rotated at
 10 MB, three files. `make collect-stop` stops only the collector; `make down`
 stops everything.
 
+## Check feed freshness
+
+```bash
+set -a; source .env; set +a
+uv run mobility check-freshness
+```
+
+The command reads `metadata.feed_freshness`, a view with the latest attempt,
+latest successful download and latest content change of each source, and prints
+one line per Mobilis GTFS-RT feed. A feed is stale when any of the three is older
+than 5 minutes; the line names the first one, which separates a stopped collector
+from failing downloads and from a feed that no longer changes. The command exits
+with status 1 if any feed is stale. A content change means a new SHA-256; the
+Mobilis feeds change on every download because the header timestamp does.
+
 ## Database tests
 
 `make test` skips tests marked `integration`. They check the
-`metadata.fetch_attempt` constraints against the running PostgreSQL, inside
-transactions that are rolled back:
+`metadata.fetch_attempt` constraints and the `metadata.feed_freshness` view
+against the running PostgreSQL, inside transactions that are rolled back:
 
 ```bash
 set -a; source .env; set +a
