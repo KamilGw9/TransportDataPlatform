@@ -4,6 +4,10 @@ from datetime import UTC, datetime
 from google.protobuf.message import Message
 from google.transit import gtfs_realtime_pb2
 
+from mobility.ingestion.archive import describe_error, sha256_hex
+
+SOURCE_ID = "krakow_ztp_m_vehicle_positions"
+
 
 @dataclass(frozen=True)
 class VehiclePositionSnapshot:
@@ -63,3 +67,90 @@ def parse_snapshot(data: bytes) -> VehiclePositionSnapshot:
     return VehiclePositionSnapshot(
         optional_timestamp(message.header, "timestamp"), positions
     )
+
+
+@dataclass(frozen=True)
+class VehiclePositionLoad:
+    snapshot_sha256: str
+    object_key: str
+    started_at: datetime
+    status: str
+    error: str | None = None
+
+
+# A snapshot stored on two UTC dates has two objects with the same content;
+# either of them will do.
+_SELECT_PENDING_SNAPSHOTS = """
+SELECT DISTINCT ON (attempt.sha256) attempt.sha256, attempt.object_key
+FROM metadata.fetch_attempt AS attempt
+WHERE attempt.source_id = %s
+    AND attempt.status = 'stored'
+    AND NOT EXISTS (
+        SELECT 1 FROM metadata.vehicle_position_load AS load
+        WHERE load.snapshot_sha256 = attempt.sha256 AND load.status = 'loaded'
+    )
+ORDER BY attempt.sha256, attempt.fetched_at
+"""
+
+
+def pending_snapshots(conn, source_id: str) -> list[tuple[str, str]]:
+    """Return the hash and object key of each stored snapshot not yet loaded."""
+    return conn.execute(_SELECT_PENDING_SNAPSHOTS, (source_id,)).fetchall()
+
+
+_INSERT_LOAD = """
+INSERT INTO metadata.vehicle_position_load
+    (snapshot_sha256, object_key, started_at, status, error)
+VALUES (%s, %s, %s, %s, %s)
+"""
+
+
+def record_load(conn, load: VehiclePositionLoad) -> None:
+    conn.execute(
+        _INSERT_LOAD,
+        (
+            load.snapshot_sha256,
+            load.object_key,
+            load.started_at,
+            load.status,
+            load.error,
+        ),
+    )
+
+
+def load_snapshot(
+    client, bucket: str, conn, snapshot_sha256: str, object_key: str
+) -> VehiclePositionLoad:
+    """Load one archived snapshot into staging and record the attempt.
+
+    Never raises: a failure rolls back the snapshot and is recorded as a
+    failed load.
+    """
+    started_at = datetime.now(UTC)
+    try:
+        data = client.get_object(Bucket=bucket, Key=object_key)["Body"].read()
+        if sha256_hex(data) != snapshot_sha256:
+            raise ValueError(f"{object_key} does not match its SHA-256")
+        snapshot = parse_snapshot(data)
+        loaded = VehiclePositionLoad(snapshot_sha256, object_key, started_at, "loaded")
+        with conn.transaction():
+            conn.execute(
+                "INSERT INTO staging.vehicle_position_snapshot VALUES (%s, %s)",
+                (snapshot_sha256, snapshot.feed_timestamp),
+            )
+            with (
+                conn.cursor() as cursor,
+                cursor.copy("COPY staging.vehicle_position FROM STDIN") as copy,
+            ):
+                for position in snapshot.positions:
+                    copy.write_row((snapshot_sha256, *position))
+            record_load(conn, loaded)
+    except Exception as e:
+        # Same boundary as load_schedule: the failure is recorded after the
+        # rollback so that it is kept.
+        failed = VehiclePositionLoad(
+            snapshot_sha256, object_key, started_at, "failed", describe_error(e)
+        )
+        record_load(conn, failed)
+        return failed
+    return loaded
