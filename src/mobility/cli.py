@@ -33,13 +33,17 @@ def run_archive(
         return archive_and_record(client, bucket, conn, feeds, archive_feed)
 
 
-def collect_realtime(client, bucket: str, interval: float) -> None:
+def stop_on_signals() -> threading.Event:
     stop = threading.Event()
     # docker stop sends SIGTERM, Ctrl+C sends SIGINT; both end the loop after
     # the current cycle.
     for signum in (signal.SIGINT, signal.SIGTERM):
         signal.signal(signum, lambda *_: stop.set())
+    return stop
 
+
+def collect_realtime(client, bucket: str, interval: float) -> None:
+    stop = stop_on_signals()
     logger.info(
         "Collecting %d GTFS-RT feeds every %g s",
         len(gtfs_rt.MOBILIS_FEEDS),
@@ -93,6 +97,21 @@ def load_latest_schedule(client, bucket: str) -> bool:
     return True
 
 
+def refresh_schedule(client, bucket: str) -> bool:
+    archived = run_archive(client, bucket, gtfs.MOBILIS_SCHEDULE, gtfs.archive_schedule)
+    # Load even after a failed download: a version archived earlier may not
+    # be loaded yet.
+    loaded = load_latest_schedule(client, bucket)
+    return archived and loaded
+
+
+def collect_schedule(client, bucket: str, interval: float) -> None:
+    stop = stop_on_signals()
+    logger.info("Refreshing the Mobilis schedule every %g s", interval)
+    collect(lambda: refresh_schedule(client, bucket), interval, stop)
+    logger.info("Schedule collector stopped")
+
+
 def positive_seconds(value: str) -> float:
     seconds = float(value)
     if seconds <= 0:
@@ -126,6 +145,16 @@ def main(argv: list[str] | None = None) -> int:
         type=positive_seconds,
         default=30.0,
         help="Seconds between the starts of two cycles (default: 30)",
+    )
+    collect_schedule_parser = commands.add_parser(
+        "collect-schedule",
+        help="Archive and load the Mobilis schedule repeatedly until stopped",
+    )
+    collect_schedule_parser.add_argument(
+        "--interval",
+        type=positive_seconds,
+        default=3600.0,
+        help="Seconds between the starts of two cycles (default: 3600)",
     )
     commands.add_parser(
         "load-schedule",
@@ -162,5 +191,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if ok else 1
     if args.command == "load-schedule":
         return 0 if load_latest_schedule(client, bucket) else 1
+    if args.command == "collect-schedule":
+        collect_schedule(client, bucket, args.interval)
+        return 0
     collect_realtime(client, bucket, args.interval)
     return 0

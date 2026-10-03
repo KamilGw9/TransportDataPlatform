@@ -130,9 +130,11 @@ skipped. Stop times are stored as seconds from the start of the service day,
 because GTFS times can exceed `24:00:00`.
 
 Mobilis publishes a new schedule every few days and realtime trip IDs follow the
-newest one, so run `archive-schedule` before `load-schedule`. Mobilis sets every
-weekday in `calendar.txt` to 0 and lists service days only in
-`calendar_dates.txt`.
+newest one, so run `archive-schedule` before `load-schedule`.
+`mobility collect-schedule` does both every hour until stopped; an unchanged ZIP
+is not stored again and an already loaded version is skipped, so most cycles
+only download the file. Mobilis sets every weekday in `calendar.txt` to 0 and
+lists service days only in `calendar_dates.txt`.
 
 ## Archive GTFS-RT snapshots
 
@@ -157,7 +159,7 @@ Each cycle archives all three feeds and opens a new database connection, so a
 PostgreSQL restart only skips the cycles while the database is down. Ctrl+C or
 SIGTERM stops the collector after the current cycle.
 
-## Run the collector as a service
+## Run the collectors as services
 
 ```bash
 make collect
@@ -166,11 +168,11 @@ make collect-stop
 ```
 
 `make collect` runs `make up`, builds the application image from the root
-`Dockerfile` and starts the `collector` service, which runs
-`mobility collect-realtime` and restarts unless stopped. Inside the Compose network
-it reaches `postgres:5432` and `http://minio:9000`. Its logs are rotated at
-10 MB, three files. `make collect-stop` stops only the collector; `make down`
-stops everything.
+`Dockerfile` and starts two services that restart unless stopped: `collector`
+runs `mobility collect-realtime` and `schedule-collector` runs
+`mobility collect-schedule`. Inside the Compose network they reach
+`postgres:5432` and `http://minio:9000`. Their logs are rotated at 10 MB, three
+files. `make collect-stop` stops both collectors; `make down` stops everything.
 
 ## Check feed freshness
 

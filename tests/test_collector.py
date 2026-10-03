@@ -60,9 +60,10 @@ def test_collect_does_not_wait_for_next_cycle_after_stop() -> None:
     assert time.monotonic() - started < 1
 
 
+@pytest.mark.parametrize("command", ["collect-realtime", "collect-schedule"])
 @pytest.mark.parametrize("interval", ["0", "-5", "soon"])
-def test_collect_realtime_rejects_invalid_interval(interval: str) -> None:
+def test_collect_commands_reject_invalid_interval(command: str, interval: str) -> None:
     with pytest.raises(SystemExit) as exit_info:
-        main(["collect-realtime", "--interval", interval])
+        main([command, "--interval", interval])
 
     assert exit_info.value.code == 2
