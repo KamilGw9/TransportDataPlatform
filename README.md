@@ -22,6 +22,7 @@ make setup
 make up
 make check-infra
 make collect    # optional: collect GTFS-RT every 30 s and the schedule hourly
+make dbt-build  # build and test the dbt models in core
 ```
 
 PostgreSQL is available at `127.0.0.1:5432`; the S3 endpoint is

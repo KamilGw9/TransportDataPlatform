@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-10-03.
+Last updated: 2026-10-05.
 
 Current stage: 4 of the [project plan](project-plan.md), realtime-to-schedule
 matching. The schedule and vehicle positions are in staging and matched by trip;
@@ -49,6 +49,10 @@ validation and analytical models are not started. Stages 1 to 3 are complete.
   positions collected by 2026-10-03, 71.5% matched a trip: none between 08:00
   and 09:44 UTC, when the feed already used trips from a schedule that had not
   been archived yet, and all of them otherwise, always with the same route.
+- Models in `core` are built by dbt from `transform/` (`make dbt-build`), with a
+  unit test of the matching logic and a uniqueness test on its output; migrations
+  cover only `metadata` and `staging` ([ADR 004](adr/004-dbt-core-models.md)). CI
+  builds the models after the migrations.
 - Feed profiler with [A/M/T reports](../tools/feed_profiler/data-profile.md),
   which led to starting with Mobilis buses
   ([ADR 001](adr/001-krakow-m-first.md)).
@@ -71,14 +75,16 @@ validation and analytical models are not started. Stages 1 to 3 are complete.
   download time, not the version that applies on the service date.
 - `load-vehicle-positions` runs only by hand. A snapshot that cannot be loaded is
   retried, and recorded as failed again, on every run.
-- `core.vehicle_position_match` is a plain view, computed on every query; it
-  takes about 2 s over 45,000 positions, while a day of collection adds about
-  230,000. TripUpdates and ServiceAlerts are archived but not decoded.
+- `core.vehicle_position_match` is a dbt model materialized as a view, computed
+  on every query; it takes about 2 s over 45,000 positions, while a day of
+  collection adds about 230,000. Its uniqueness test scans the whole view on
+  every `make dbt-build`. TripUpdates and ServiceAlerts are archived but not decoded.
 - Sources and URLs are fixed in code; only Mobilis is configured.
 - If the database write fails after an upload, that attempt is not recorded.
 - Ingestion tests use fakes for HTTP and S3; only the database tables, the
-  freshness view, schedule and vehicle position loading and the matching view
-  are tested against a real database.
+  freshness view and schedule and vehicle position loading are tested against a
+  real database. The matching model has a dbt unit test, which also needs
+  PostgreSQL.
 - MinIO Community is archived upstream and is used here only as local
   S3-compatible storage.
 - The profiling sample is short and does not cover overnight service or daylight
