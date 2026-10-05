@@ -59,3 +59,6 @@ jobs:
           make migrate
           set -a; . ./.env; set +a
           uv run --locked pytest -m integration
+
+      - name: Build and test dbt models
+        run: make dbt-build
