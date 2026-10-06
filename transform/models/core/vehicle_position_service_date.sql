@@ -34,10 +34,7 @@ candidate AS (
     SELECT
         position.*,
         service_date.service_date,
-        -- GTFS times count from noon minus 12 hours, which differs from
-        -- midnight on the days the clocks change.
-        (service_date.service_date + time '12:00') AT TIME ZONE 'Europe/Warsaw'
-            - interval '12 hours' AS service_day_start,
+        {{ service_day_start('service_date.service_date') }} AS service_day_start,
         trip_window.start_seconds,
         trip_window.end_seconds
     FROM position
