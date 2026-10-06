@@ -10,7 +10,9 @@ unit_tests:
           - {snapshot_sha256: s1, entity_id: after_midnight, schedule_sha256: v1, trip_id: night, trip_found: true}
           - {snapshot_sha256: s1, entity_id: before_start, schedule_sha256: v1, trip_id: early, trip_found: true}
           - {snapshot_sha256: s1, entity_id: clock_change, schedule_sha256: v1, trip_id: sunday, trip_found: true}
+          - {snapshot_sha256: s1, entity_id: equidistant, schedule_sha256: v1, trip_id: morning, trip_found: true}
           - {snapshot_sha256: s1, entity_id: no_service, schedule_sha256: v1, trip_id: unlisted, trip_found: true}
+          - {snapshot_sha256: s1, entity_id: no_stop_times, schedule_sha256: v1, trip_id: stopless, trip_found: true}
           - {snapshot_sha256: s1, entity_id: unknown_trip, schedule_sha256: v1, trip_id: missing, trip_found: false}
       - input: source('staging', 'vehicle_position')
         rows:
@@ -19,14 +21,20 @@ unit_tests:
           # 23:55 local on 2026-10-05.
           - {snapshot_sha256: s1, entity_id: before_start, position_timestamp: "2026-10-05 21:55:00+00"}
           - {snapshot_sha256: s1, entity_id: clock_change, position_timestamp: "2026-10-25 07:05:00+00"}
+          # 20:15 local, 11:45 from the end of the 2026-10-05 trip and from the
+          # start of the 2026-10-06 one.
+          - {snapshot_sha256: s1, entity_id: equidistant, position_timestamp: "2026-10-05 18:15:00+00"}
           - {snapshot_sha256: s1, entity_id: no_service, position_timestamp: "2026-10-05 12:00:00+00"}
+          - {snapshot_sha256: s1, entity_id: no_stop_times, position_timestamp: "2026-10-05 12:00:00+00"}
           - {snapshot_sha256: s1, entity_id: unknown_trip, position_timestamp: "2026-10-05 12:00:00+00"}
       - input: source('staging', 'schedule_trip')
         rows:
           - {schedule_sha256: v1, trip_id: night, service_id: weekday}
           - {schedule_sha256: v1, trip_id: early, service_id: weekday}
           - {schedule_sha256: v1, trip_id: sunday, service_id: sunday}
+          - {schedule_sha256: v1, trip_id: morning, service_id: weekday}
           - {schedule_sha256: v1, trip_id: unlisted, service_id: unlisted}
+          - {schedule_sha256: v1, trip_id: stopless, service_id: weekday}
       - input: source('staging', 'schedule_stop_time')
         rows:
           # 24:30 to 25:10.
@@ -38,6 +46,9 @@ unit_tests:
           # 08:00 to 08:30.
           - {schedule_sha256: v1, trip_id: sunday, arrival_seconds: 28800, departure_seconds: 28800}
           - {schedule_sha256: v1, trip_id: sunday, arrival_seconds: 30600, departure_seconds: 30600}
+          # 08:00 to 08:30.
+          - {schedule_sha256: v1, trip_id: morning, arrival_seconds: 28800, departure_seconds: 28800}
+          - {schedule_sha256: v1, trip_id: morning, arrival_seconds: 30600, departure_seconds: 30600}
           - {schedule_sha256: v1, trip_id: unlisted, arrival_seconds: 50400, departure_seconds: 50400}
       - input: ref('service_date')
         rows:
@@ -50,4 +61,6 @@ unit_tests:
         - {entity_id: before_start, service_date: "2026-10-06", trip_start: "2026-10-05 22:05:00+00"}
         # The service day starts at 01:00 local, so 08:00 is 07:00 UTC.
         - {entity_id: clock_change, service_date: "2026-10-25", trip_start: "2026-10-25 07:00:00+00"}
+        - {entity_id: equidistant, service_date: "2026-10-05", trip_start: "2026-10-05 06:00:00+00"}
         - {entity_id: no_service, service_date: null, trip_start: null}
+        - {entity_id: no_stop_times, service_date: null, trip_start: null}
