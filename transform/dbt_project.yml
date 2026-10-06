@@ -1,0 +1,6 @@
+name: mobility
+version: "1.0.0"
+profile: mobility
+
+flags:
+  send_anonymous_usage_stats: false

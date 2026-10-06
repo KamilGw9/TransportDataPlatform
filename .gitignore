@@ -11,3 +11,5 @@ __pycache__/
 .codex
 .agents
 URBAN_MOBILITY_PROJECT_PLAN.md
+/transform/target/
+/transform/logs/

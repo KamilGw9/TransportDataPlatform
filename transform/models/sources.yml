@@ -1,0 +1,10 @@
+sources:
+  - name: metadata
+    tables:
+      - name: fetch_attempt
+      - name: schedule_load
+
+  - name: staging
+    tables:
+      - name: schedule_trip
+      - name: vehicle_position

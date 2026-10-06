@@ -53,8 +53,9 @@ the configured values. Schemas:
 
 - `metadata`: fetch records (`metadata.fetch_attempt`) and schedule loads
   (`metadata.schedule_load`);
-- `staging`: schedule versions loaded from the RAW ZIP (`staging.schedule_*`);
-- `core`: future normalized transport models;
+- `staging`: schedule versions loaded from the RAW ZIP (`staging.schedule_*`) and
+  vehicle positions (`staging.vehicle_position*`);
+- `core`: dbt models that join the sources;
 - `marts`: future analytical outputs.
 
 The initial SQL only runs on a new empty PostgreSQL volume. Changes to init SQL or
@@ -64,6 +65,11 @@ in `infrastructure/docker/postgres/migrations/`, applied in name order by
 SHA-256 in `metadata.schema_migrations`. Do not edit an applied migration: the
 next `make migrate` fails with an error. Add a new file instead (see
 [ADR 003](adr/003-fetch-records.md)).
+
+Migrations cover only `metadata` and `staging`. Models in `core` are defined in
+`transform/` and built by `make dbt-build`, which loads `.env` and runs
+`dbt build`: unit tests, models, then data tests. Run it after `make migrate` and
+after changing a model (see [ADR 004](adr/004-dbt-core-models.md)).
 
 S3 defaults to bucket `mobility`, region `us-east-1`, path-style addressing.
 For the local Python collector, the access key is `MINIO_ROOT_USER`, the
@@ -188,9 +194,9 @@ timestamp goes to `staging.vehicle_position_snapshot` and one row per vehicle to
 others still load. Running the command again loads only new snapshots. Fields
 that the feed leaves unset are stored as `NULL`, not as protobuf defaults.
 
-`core.vehicle_position_match` joins each position to the schedule version that
-was the latest archived one when the snapshot was first downloaded. Share of
-positions whose trip was found, per hour:
+`core.vehicle_position_match`, a view built by `make dbt-build`, joins each
+position to the schedule version that was the latest archived one when the
+snapshot was first downloaded. Share of positions whose trip was found, per hour:
 
 ```sql
 SELECT date_trunc('hour', first_fetched_at) AS hour,
@@ -227,7 +233,9 @@ set -a; source .env; set +a
 uv run pytest -m integration
 ```
 
-CI runs them against a fresh PostgreSQL container after `make migrate`.
+CI runs them against a fresh PostgreSQL container after `make migrate`, followed
+by `make dbt-build`. The matching logic in `core` is covered by a dbt unit test in
+`transform/models/core/`, which also needs the running database.
 
 ## Troubleshooting
 
