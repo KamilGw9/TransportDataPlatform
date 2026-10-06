@@ -43,11 +43,13 @@ candidate AS (
     FROM position
     JOIN {{ source('staging', 'schedule_trip') }} AS trip
         USING (schedule_sha256, trip_id)
-    JOIN trip_window USING (schedule_sha256, trip_id)
-    -- A position whose service runs on none of the candidate dates is kept
-    -- with a null service date.
+    LEFT JOIN trip_window USING (schedule_sha256, trip_id)
+    -- A position whose service runs on none of the candidate dates, or whose
+    -- trip has no stop times to place it on a date, is kept with a null
+    -- service date.
     LEFT JOIN {{ ref('service_date') }} AS service_date
-        ON service_date.schedule_sha256 = position.schedule_sha256
+        ON trip_window.trip_id IS NOT NULL
+        AND service_date.schedule_sha256 = position.schedule_sha256
         AND service_date.service_id = trip.service_id
         AND service_date.service_date BETWEEN position.local_date - 1
             AND position.local_date + 1

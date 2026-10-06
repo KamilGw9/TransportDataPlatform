@@ -12,6 +12,7 @@ unit_tests:
           - {snapshot_sha256: s1, entity_id: clock_change, schedule_sha256: v1, trip_id: sunday, trip_found: true}
           - {snapshot_sha256: s1, entity_id: equidistant, schedule_sha256: v1, trip_id: morning, trip_found: true}
           - {snapshot_sha256: s1, entity_id: no_service, schedule_sha256: v1, trip_id: unlisted, trip_found: true}
+          - {snapshot_sha256: s1, entity_id: no_stop_times, schedule_sha256: v1, trip_id: stopless, trip_found: true}
           - {snapshot_sha256: s1, entity_id: unknown_trip, schedule_sha256: v1, trip_id: missing, trip_found: false}
       - input: source('staging', 'vehicle_position')
         rows:
@@ -24,6 +25,7 @@ unit_tests:
           # start of the 2026-10-06 one.
           - {snapshot_sha256: s1, entity_id: equidistant, position_timestamp: "2026-10-05 18:15:00+00"}
           - {snapshot_sha256: s1, entity_id: no_service, position_timestamp: "2026-10-05 12:00:00+00"}
+          - {snapshot_sha256: s1, entity_id: no_stop_times, position_timestamp: "2026-10-05 12:00:00+00"}
           - {snapshot_sha256: s1, entity_id: unknown_trip, position_timestamp: "2026-10-05 12:00:00+00"}
       - input: source('staging', 'schedule_trip')
         rows:
@@ -32,6 +34,7 @@ unit_tests:
           - {schedule_sha256: v1, trip_id: sunday, service_id: sunday}
           - {schedule_sha256: v1, trip_id: morning, service_id: weekday}
           - {schedule_sha256: v1, trip_id: unlisted, service_id: unlisted}
+          - {schedule_sha256: v1, trip_id: stopless, service_id: weekday}
       - input: source('staging', 'schedule_stop_time')
         rows:
           # 24:30 to 25:10.
@@ -60,3 +63,4 @@ unit_tests:
         - {entity_id: clock_change, service_date: "2026-10-25", trip_start: "2026-10-25 07:00:00+00"}
         - {entity_id: equidistant, service_date: "2026-10-05", trip_start: "2026-10-05 06:00:00+00"}
         - {entity_id: no_service, service_date: null, trip_start: null}
+        - {entity_id: no_stop_times, service_date: null, trip_start: null}
