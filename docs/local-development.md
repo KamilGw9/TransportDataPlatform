@@ -194,15 +194,30 @@ timestamp goes to `staging.vehicle_position_snapshot` and one row per vehicle to
 others still load. Running the command again loads only new snapshots. Fields
 that the feed leaves unset are stored as `NULL`, not as protobuf defaults.
 
-`core.vehicle_position_match`, a view built by `make dbt-build`, joins each
-position to the schedule version that was the latest archived one when the
-snapshot was first downloaded. Share of positions whose trip was found, per hour:
+The models in `core` are tables, so run `make dbt-build` after loading to include
+the new positions. `core.vehicle_position_match` joins each position to the
+schedule version that was the latest archived one when the snapshot was first
+downloaded. Share of positions whose trip was found, per hour:
 
 ```sql
 SELECT date_trunc('hour', first_fetched_at) AS hour,
        count(*) AS positions,
        round(100.0 * count(*) FILTER (WHERE trip_found) / count(*), 1) AS matched_pct
 FROM core.vehicle_position_match
+GROUP BY 1
+ORDER BY 1;
+```
+
+`core.vehicle_position_service_date` adds the service date of each matched trip
+and its scheduled start and end. Positions outside the scheduled time of their
+trip, in minutes:
+
+```sql
+SELECT round(extract(epoch FROM greatest(trip_start - position_timestamp,
+                                         position_timestamp - trip_end)) / 60) AS minutes,
+       count(*) AS positions
+FROM core.vehicle_position_service_date
+WHERE position_timestamp NOT BETWEEN trip_start AND trip_end
 GROUP BY 1
 ORDER BY 1;
 ```
@@ -234,8 +249,8 @@ uv run pytest -m integration
 ```
 
 CI runs them against a fresh PostgreSQL container after `make migrate`, followed
-by `make dbt-build`. The matching logic in `core` is covered by a dbt unit test in
-`transform/models/core/`, which also needs the running database.
+by `make dbt-build`. The models in `core` are covered by dbt unit tests in
+`transform/models/core/`, which also need the running database.
 
 ## Troubleshooting
 

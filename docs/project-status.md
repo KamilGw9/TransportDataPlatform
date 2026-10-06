@@ -1,10 +1,11 @@
 # Project status
 
-Last updated: 2026-10-05.
+Last updated: 2026-10-06.
 
 Current stage: 4 of the [project plan](project-plan.md), realtime-to-schedule
-matching. The schedule and vehicle positions are in staging and matched by trip;
-validation and analytical models are not started. Stages 1 to 3 are complete.
+matching. The schedule and vehicle positions are in staging, matched by trip and
+assigned the service date of that trip; validation and analytical models are not
+started. Stages 1 to 3 are complete.
 
 ## What works
 
@@ -45,12 +46,23 @@ validation and analytical models are not started. Stages 1 to 3 are complete.
   transaction per snapshot, and records each attempt in
   `metadata.vehicle_position_load`. The header timestamp is kept per snapshot.
   `core.vehicle_position_match` matches each position to the schedule version
-  that was the latest archived one when the snapshot was downloaded. Of 45,373
-  positions collected by 2026-10-03, 71.5% matched a trip: none between 08:00
-  and 09:44 UTC, when the feed already used trips from a schedule that had not
-  been archived yet, and all of them otherwise, always with the same route.
-- Models in `core` are built by dbt from `transform/` (`make dbt-build`), with a
-  unit test of the matching logic and a uniqueness test on its output; migrations
+  that was the latest archived one when the snapshot was downloaded. Of 193,868
+  positions collected by 2026-10-06, 93.3% matched a trip: none between 08:00
+  and 09:44 UTC on 2026-10-03, when the feed already used trips from a schedule
+  that had not been archived yet, and all of them otherwise, always with the
+  same route.
+- Service dates: `core.service_date` lists the dates on which each service of a
+  schedule version runs, from `calendar` and `calendar_dates`.
+  `core.vehicle_position_service_date` gives each matched position the service
+  date whose scheduled trip lies nearest to the position time, choosing between
+  the local date and the days before and after, with the scheduled start and end
+  of that trip. Service days start at noon minus 12 hours in Europe/Warsaw, as
+  GTFS defines them, so trips keep their clock times when daylight saving time
+  ends. All 180,934 matched positions got a service date; 67% lie within the
+  scheduled time of their trip, and 99% of the rest within 30 minutes of it.
+- Models in `core` are built by dbt from `transform/` (`make dbt-build`), with
+  unit tests of each model and a uniqueness test on the matching output. The
+  two position models are tables, rebuilt in about 25 s; migrations
   cover only `metadata` and `staging` ([ADR 004](adr/004-dbt-core-models.md)). CI
   builds the models after the migrations.
 - Feed profiler with [A/M/T reports](../tools/feed_profiler/data-profile.md),
@@ -70,20 +82,26 @@ validation and analytical models are not started. Stages 1 to 3 are complete.
   matching within days. `check-freshness` covers only the realtime feeds.
 - Staging keeps only the schedule columns needed for matching; shapes, agency
   and feed info stay in the RAW ZIP.
-- Mobilis does not send `start_date` in trip descriptors, and the service date of
-  a trip is not inferred yet. Matching uses the schedule version known at
-  download time, not the version that applies on the service date.
+- Collection runs only while the host is awake. Between 2026-10-03 and 2026-10-06
+  the collectors were stopped for 17 to 23 hours each night by the laptop's sleep,
+  so about 17 hours of realtime data were collected in five days and none of it
+  covers midnight. Service dates after midnight are checked only by unit tests.
+  Nothing reports such gaps after the fact.
+- Mobilis does not send `start_date` in trip descriptors, so the service date is
+  inferred from the schedule. Matching uses the schedule version known at
+  download time, not the version that applies on the service date. The time zone
+  is fixed to Europe/Warsaw, the `agency_timezone` of Mobilis.
 - `load-vehicle-positions` runs only by hand. A snapshot that cannot be loaded is
   retried, and recorded as failed again, on every run.
-- `core.vehicle_position_match` is a dbt model materialized as a view, computed
-  on every query; it takes about 2 s over 45,000 positions, while a day of
-  collection adds about 230,000. Its uniqueness test scans the whole view on
-  every `make dbt-build`. TripUpdates and ServiceAlerts are archived but not decoded.
+- The position models in `core` are rebuilt from scratch by `make dbt-build` and
+  include only positions loaded before the last build. As views, they took 11 s
+  and 15 s per query over 194,000 positions; a day of continuous collection adds
+  about 230,000. TripUpdates and ServiceAlerts are archived but not decoded.
 - Sources and URLs are fixed in code; only Mobilis is configured.
 - If the database write fails after an upload, that attempt is not recorded.
 - Ingestion tests use fakes for HTTP and S3; only the database tables, the
   freshness view and schedule and vehicle position loading are tested against a
-  real database. The matching model has a dbt unit test, which also needs
+  real database. The models in `core` have dbt unit tests, which also need
   PostgreSQL.
 - MinIO Community is archived upstream and is used here only as local
   S3-compatible storage.
@@ -92,8 +110,8 @@ validation and analytical models are not started. Stages 1 to 3 are complete.
 
 ## Next
 
-Infer the service date of each matched trip, so that a position can be compared
-with the scheduled stop times. The collectors have been running since
-2026-10-03; the next measurement should cover a service date change after
-midnight. Open questions: interpretation of vehicle states and the accuracy of
-arrival estimates.
+Turn the scheduled stop times of each trip on its service date into timestamps,
+then estimate arrivals at stops from vehicle states and compare them with the
+schedule. The service date inference still needs a measurement on positions
+collected across midnight. Open questions: interpretation of vehicle states and
+the accuracy of arrival estimates.
