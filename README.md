@@ -54,5 +54,3 @@ set -a; source .env; set +a
 uv run mobility archive-schedule
 uv run mobility archive-realtime
 ```
-
-Project documentation, code identifiers, and commit messages are written in English.
