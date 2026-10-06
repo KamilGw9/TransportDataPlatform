@@ -72,4 +72,7 @@ FROM trip_instance
 ORDER BY
     snapshot_sha256,
     entity_id,
-    greatest(trip_start - position_timestamp, position_timestamp - trip_end)
+    greatest(trip_start - position_timestamp, position_timestamp - trip_end),
+    -- Without it, a position equally distant from two dates could get a
+    -- different one on every build.
+    service_date
