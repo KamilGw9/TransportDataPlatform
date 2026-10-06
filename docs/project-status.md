@@ -84,19 +84,22 @@ started. Stages 1 to 3 are complete.
   and feed info stay in the RAW ZIP.
 - Collection runs only while the host is awake. Between 2026-10-03 and 2026-10-06
   the collectors were stopped for 17 to 23 hours each night by the laptop's sleep,
-  so about 17 hours of realtime data were collected in five days and none of it
+  so about 17 hours of realtime data were collected in four days and none of it
   covers midnight. Service dates after midnight are checked only by unit tests.
   Nothing reports such gaps after the fact.
 - Mobilis does not send `start_date` in trip descriptors, so the service date is
   inferred from the schedule. Matching uses the schedule version known at
   download time, not the version that applies on the service date. The time zone
-  is fixed to Europe/Warsaw, the `agency_timezone` of Mobilis.
+  is fixed to Europe/Warsaw, the `agency_timezone` of Mobilis. A position
+  without `vehicle.timestamp` gets no service date, and `make dbt-build` warns
+  when there is one; none has appeared so far.
 - `load-vehicle-positions` runs only by hand. A snapshot that cannot be loaded is
   retried, and recorded as failed again, on every run.
 - The position models in `core` are rebuilt from scratch by `make dbt-build` and
   include only positions loaded before the last build. As views, they took 11 s
-  and 15 s per query over 194,000 positions; a day of continuous collection adds
-  about 230,000. TripUpdates and ServiceAlerts are archived but not decoded.
+  per query over 194,000 positions and 15 s over the 181,000 matched ones; a day
+  of continuous collection adds about 230,000. TripUpdates and ServiceAlerts are
+  archived but not decoded.
 - Sources and URLs are fixed in code; only Mobilis is configured.
 - If the database write fails after an upload, that attempt is not recorded.
 - Ingestion tests use fakes for HTTP and S3; only the database tables, the

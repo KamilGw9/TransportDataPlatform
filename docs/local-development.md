@@ -194,10 +194,10 @@ timestamp goes to `staging.vehicle_position_snapshot` and one row per vehicle to
 others still load. Running the command again loads only new snapshots. Fields
 that the feed leaves unset are stored as `NULL`, not as protobuf defaults.
 
-The models in `core` are tables, so run `make dbt-build` after loading to include
-the new positions. `core.vehicle_position_match` joins each position to the
-schedule version that was the latest archived one when the snapshot was first
-downloaded. Share of positions whose trip was found, per hour:
+The position models in `core` are tables, so run `make dbt-build` after loading
+to include the new positions. `core.vehicle_position_match` joins each position
+to the schedule version that was the latest archived one when the snapshot was
+first downloaded. Share of positions whose trip was found, per hour:
 
 ```sql
 SELECT date_trunc('hour', first_fetched_at) AS hour,
