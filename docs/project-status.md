@@ -3,8 +3,9 @@
 Last updated: 2026-10-06.
 
 Current stage: 4 of the [project plan](project-plan.md), realtime-to-schedule
-matching. The schedule and vehicle positions are in staging, matched by trip and
-assigned the service date of that trip; validation and analytical models are not
+matching. Vehicle positions are matched to scheduled trips on their service
+dates, arrivals at stops are estimated from vehicle states, and the first
+analytical model gives route punctuality. Validation of the source data is not
 started. Stages 1 to 3 are complete.
 
 ## What works
@@ -60,11 +61,26 @@ started. Stages 1 to 3 are complete.
   GTFS defines them, so trips keep their clock times when daylight saving time
   ends. All 180,934 matched positions got a service date; 67% lie within the
   scheduled time of their trip, and 99% of the rest within 30 minutes of it.
-- Models in `core` are built by dbt from `transform/` (`make dbt-build`), with
-  unit tests of each model and a uniqueness test on the matching output. The
-  two position models are tables, rebuilt in about 25 s; migrations
-  cover only `metadata` and `staging` ([ADR 004](adr/004-dbt-core-models.md)). CI
-  builds the models after the migrations.
+- Arrivals: `core.stop_arrival` estimates an arrival when a vehicle is first
+  seen stopped at a stop that it had not reached in its previous observation.
+  The arrival is the window between the two observations, with the distance of
+  the vehicle from the stop at the end of it. Of 18,471 arrivals by 2026-10-06,
+  the window had a median of 30 s, and 99.7% of those with a known position were
+  within 50 m of the stop (median 10 m). `core.trip_stop_time` gives the
+  scheduled times of each trip seen in realtime data, and
+  `core.stop_arrival_delay` the delay of each arrival as a range.
+- Punctuality: `marts.route_punctuality` counts early, on-time and late arrivals
+  per route, service date and hour of the service day. It uses the first arrival
+  at each stop of a trip, within 50 m of the stop and with a window of at most
+  60 s; an arrival is on time from 1 minute early to 3 minutes late, judged by
+  the middle of its delay range. Of 18,233 such arrivals by 2026-10-06, 59.3%
+  were on time, 40.4% late and 0.3% early.
+- Models in `core` and `marts` are built by dbt from `transform/`
+  (`make dbt-build`), with unit tests of each model and a uniqueness test on the
+  matching output. The two position models and the punctuality model are
+  tables, rebuilt in about 35 s; migrations cover only `metadata` and `staging`
+  ([ADR 004](adr/004-dbt-core-models.md)). CI builds the models after the
+  migrations.
 - Feed profiler with [A/M/T reports](../tools/feed_profiler/data-profile.md),
   which led to starting with Mobilis buses
   ([ADR 001](adr/001-krakow-m-first.md)).
@@ -100,12 +116,18 @@ started. Stages 1 to 3 are complete.
   per query over 194,000 positions and 15 s over the 181,000 matched ones; a day
   of continuous collection adds about 230,000. TripUpdates and ServiceAlerts are
   archived but not decoded.
+- The punctuality figures come from afternoons and evenings of four days,
+  including a Saturday, and say nothing about mornings or nights. Arrivals are
+  estimated only where the vehicle reports STOPPED_AT; a vehicle first seen
+  stopped, such as at the first stop of a trip, gives no arrival.
+- 440 positions (0.2%) report coordinates of exactly 0, 0, from vehicles without
+  a GPS fix. They stay in staging; their distance from a stop is unknown and
+  punctuality leaves them out.
 - Sources and URLs are fixed in code; only Mobilis is configured.
 - If the database write fails after an upload, that attempt is not recorded.
 - Ingestion tests use fakes for HTTP and S3; only the database tables, the
   freshness view and schedule and vehicle position loading are tested against a
-  real database. The models in `core` have dbt unit tests, which also need
-  PostgreSQL.
+  real database. The dbt models have unit tests, which also need PostgreSQL.
 - MinIO Community is archived upstream and is used here only as local
   S3-compatible storage.
 - The profiling sample is short and does not cover overnight service or daylight
@@ -113,8 +135,9 @@ started. Stages 1 to 3 are complete.
 
 ## Next
 
-Turn the scheduled stop times of each trip on its service date into timestamps,
-then estimate arrivals at stops from vehicle states and compare them with the
-schedule. The service date inference still needs a measurement on positions
-collected across midnight. Open questions: interpretation of vehicle states and
-the accuracy of arrival estimates.
+Run loading and model builds without manual steps, after deciding between cron
+and Airflow in an ADR, so that the punctuality model stays current. Collect
+continuously for at least a week, including nights, then measure the service
+date inference across midnight and validate the source data. Open questions:
+how far the realtime trips cover the schedule, and how accurate the TripUpdates
+predictions are.
