@@ -1,3 +1,7 @@
+{{ config(materialized='table') }}
+
+-- A table: as a view it took 15 s over 181,000 positions on every query.
+
 -- The service date of the trip each matched position refers to. Mobilis does
 -- not send start_date, and a trip_id runs on every date of its service, so the
 -- date is the one whose scheduled trip lies nearest to the position time.
