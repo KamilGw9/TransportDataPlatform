@@ -11,3 +11,11 @@ sources:
       - name: schedule_stop_time
       - name: schedule_trip
       - name: vehicle_position
+        columns:
+          # GTFS-RT makes vehicle.timestamp optional, and a position without it
+          # gets no service date.
+          - name: position_timestamp
+            data_tests:
+              - not_null:
+                  config:
+                    severity: warn
