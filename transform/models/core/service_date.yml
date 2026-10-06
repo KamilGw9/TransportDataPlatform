@@ -1,0 +1,23 @@
+unit_tests:
+  - name: service_date_applies_weekdays_and_exceptions
+    model: service_date
+    given:
+      # 2026-10-05 is a Monday.
+      - input: source('staging', 'schedule_calendar')
+        rows:
+          - {schedule_sha256: v1, service_id: weekday, monday: true, tuesday: true, wednesday: true, thursday: true, friday: true, saturday: false, sunday: false, start_date: "2026-10-05", end_date: "2026-10-11"}
+          - {schedule_sha256: v1, service_id: sunday, monday: false, tuesday: false, wednesday: false, thursday: false, friday: false, saturday: false, sunday: true, start_date: "2026-10-05", end_date: "2026-10-11"}
+      - input: source('staging', 'schedule_calendar_date')
+        rows:
+          - {schedule_sha256: v1, service_id: weekday, service_date: "2026-10-07", exception_type: 2}
+          - {schedule_sha256: v1, service_id: weekday, service_date: "2026-10-10", exception_type: 1}
+          - {schedule_sha256: v1, service_id: dates_only, service_date: "2026-10-11", exception_type: 1}
+    expect:
+      rows:
+        - {schedule_sha256: v1, service_id: weekday, service_date: "2026-10-05"}
+        - {schedule_sha256: v1, service_id: weekday, service_date: "2026-10-06"}
+        - {schedule_sha256: v1, service_id: weekday, service_date: "2026-10-08"}
+        - {schedule_sha256: v1, service_id: weekday, service_date: "2026-10-09"}
+        - {schedule_sha256: v1, service_id: weekday, service_date: "2026-10-10"}
+        - {schedule_sha256: v1, service_id: sunday, service_date: "2026-10-11"}
+        - {schedule_sha256: v1, service_id: dates_only, service_date: "2026-10-11"}

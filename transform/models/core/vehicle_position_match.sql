@@ -1,3 +1,7 @@
+{{ config(materialized='table') }}
+
+-- A table: as a view it took 11 s over 194,000 positions on every query.
+
 -- Each Mobilis vehicle position with the trip it refers to in the schedule
 -- version that was the latest one archived when the snapshot was first
 -- downloaded. A version archived later can contain the same trip_id, but the

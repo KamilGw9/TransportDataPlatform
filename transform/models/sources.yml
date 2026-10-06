@@ -6,5 +6,8 @@ sources:
 
   - name: staging
     tables:
+      - name: schedule_calendar
+      - name: schedule_calendar_date
+      - name: schedule_stop_time
       - name: schedule_trip
       - name: vehicle_position
