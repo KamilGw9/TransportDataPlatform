@@ -14,12 +14,17 @@ unit_tests:
           # Already stopped when first seen: no lower bound, no arrival.
           - {snapshot_sha256: s1, entity_id: e1, vehicle_id: bus, current_status: STOPPED_AT, current_stop_sequence: 1, stop_id: a, position_timestamp: "2026-10-05 10:00:00+00"}
           - {snapshot_sha256: s2, entity_id: e1, vehicle_id: bus, current_status: IN_TRANSIT_TO, current_stop_sequence: 2, stop_id: b, position_timestamp: "2026-10-05 10:00:30+00"}
-          - {snapshot_sha256: s3, entity_id: e1, vehicle_id: bus, current_status: STOPPED_AT, current_stop_sequence: 2, stop_id: b, position_timestamp: "2026-10-05 10:01:00+00"}
+          - {snapshot_sha256: s3, entity_id: e1, vehicle_id: bus, current_status: STOPPED_AT, current_stop_sequence: 2, stop_id: b, position_timestamp: "2026-10-05 10:01:00+00", latitude: 50.001, longitude: 20.0}
           # Still at the same stop: not a second arrival.
           - {snapshot_sha256: s4, entity_id: e1, vehicle_id: bus, current_status: STOPPED_AT, current_stop_sequence: 2, stop_id: b, position_timestamp: "2026-10-05 10:01:30+00"}
-          # Stop 3 passed between observations.
-          - {snapshot_sha256: s5, entity_id: e1, vehicle_id: bus, current_status: STOPPED_AT, current_stop_sequence: 4, stop_id: d, position_timestamp: "2026-10-05 10:03:00+00"}
+          # Stop 3 passed between observations; no GPS fix at stop 4.
+          - {snapshot_sha256: s5, entity_id: e1, vehicle_id: bus, current_status: STOPPED_AT, current_stop_sequence: 4, stop_id: d, position_timestamp: "2026-10-05 10:03:00+00", latitude: 0, longitude: 0}
+      - input: source('staging', 'schedule_stop')
+        rows:
+          - {schedule_sha256: v1, stop_id: b, stop_lat: 50.0, stop_lon: 20.0}
+          - {schedule_sha256: v1, stop_id: d, stop_lat: 50.01, stop_lon: 20.0}
     expect:
       rows:
-        - {stop_sequence: 2, arrived_after: "2026-10-05 10:00:30+00", arrived_by: "2026-10-05 10:01:00+00"}
-        - {stop_sequence: 4, arrived_after: "2026-10-05 10:01:30+00", arrived_by: "2026-10-05 10:03:00+00"}
+        # 0.001 degrees of latitude.
+        - {stop_sequence: 2, arrived_after: "2026-10-05 10:00:30+00", arrived_by: "2026-10-05 10:01:00+00", distance_to_stop_m: 111.2}
+        - {stop_sequence: 4, arrived_after: "2026-10-05 10:01:30+00", arrived_by: "2026-10-05 10:03:00+00", distance_to_stop_m: null}
