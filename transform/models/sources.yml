@@ -8,6 +8,7 @@ sources:
     tables:
       - name: schedule_calendar
       - name: schedule_calendar_date
+      - name: schedule_route
       - name: schedule_stop
       - name: schedule_stop_time
       - name: schedule_trip
