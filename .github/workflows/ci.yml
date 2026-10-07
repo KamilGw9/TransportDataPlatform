@@ -29,10 +29,10 @@ jobs:
         run: uv sync --locked --dev
 
       - name: Check lint
-        run: uv run --locked ruff check src/ tools/feed_profiler/ scripts/ tests/
+        run: uv run --locked ruff check src/ tools/feed_profiler/ scripts/ tests/ dags/
 
       - name: Check formatting
-        run: uv run --locked ruff format --check src/ tools/feed_profiler/ scripts/ tests/
+        run: uv run --locked ruff format --check src/ tools/feed_profiler/ scripts/ tests/ dags/
 
       - name: Run tests
         run: uv run --locked pytest
@@ -49,9 +49,13 @@ jobs:
           bash -n scripts/check_infrastructure.sh
           bash -n scripts/migrate.sh
           sh -n infrastructure/docker/minio/init.sh
+          bash -n infrastructure/docker/airflow/init.sh
 
       - name: Build application image
         run: docker build --tag mobility-app .
+
+      - name: Check Airflow DAGs
+        run: make check-dags
 
       - name: Test database constraints
         run: |

@@ -1,9 +1,9 @@
-.PHONY: help setup up migrate collect collect-stop down ps logs postgres check-infra dbt-build test lint
+.PHONY: help setup up migrate collect collect-stop airflow down ps logs postgres check-infra check-dags dbt-build test lint
 
 COMPOSE := docker compose
 
 help:
-	@printf '%s\n' 'make setup        Prepare local .env (preserves existing values)' 'make up           Start PostgreSQL, MinIO, initialize the bucket and migrate' 'make migrate      Apply SQL migrations (safe to repeat)' 'make collect      Start the GTFS-RT and schedule collectors (runs make up first)' 'make collect-stop Stop both collectors, keeping other services' 'make down         Stop services, retaining all volumes' 'make ps           Show service status' 'make logs         Follow service logs' 'make postgres     Open a SQL session' 'make check-infra  Check SQL and S3 writes across container recreation' 'make dbt-build    Build and test the dbt models in core' 'make test         Run Python tests' 'make lint         Check Python style'
+	@printf '%s\n' 'make setup        Prepare local .env (preserves existing values)' 'make up           Start PostgreSQL, MinIO, initialize the bucket and migrate' 'make migrate      Apply SQL migrations (safe to repeat)' 'make collect      Start the GTFS-RT and schedule collectors (runs make up first)' 'make collect-stop Stop both collectors, keeping other services' 'make airflow      Start Airflow (runs make up first)' 'make down         Stop services, retaining all volumes' 'make ps           Show service status' 'make logs         Follow service logs' 'make postgres     Open a SQL session' 'make check-infra  Check SQL and S3 writes across container recreation' 'make check-dags   Check that the Airflow DAGs import' 'make dbt-build    Build and test the dbt models in core' 'make test         Run Python tests' 'make lint         Check Python style'
 
 setup:
 	python3 scripts/setup_env.py
@@ -23,6 +23,9 @@ collect: up
 collect-stop:
 	$(COMPOSE) stop collector schedule-collector
 
+airflow: up
+	$(COMPOSE) up -d --build --wait airflow-api-server airflow-scheduler airflow-dag-processor
+
 down:
 	$(COMPOSE) down
 
@@ -38,6 +41,13 @@ postgres:
 check-infra:
 	bash scripts/check_infrastructure.sh
 
+# Test runs of a DAG need a metadata database; this one is SQLite inside the
+# throwaway container, not the airflow database in PostgreSQL.
+check-dags:
+	$(COMPOSE) build airflow-scheduler
+	docker run --rm -v "$(CURDIR)/scripts/check_dags.py:/tmp/check_dags.py:ro" mobility-airflow \
+		bash -c "airflow db migrate > /dev/null && python /tmp/check_dags.py"
+
 # dbt reads the database password from the environment, unlike Compose, which
 # loads .env by itself.
 dbt-build:
@@ -47,5 +57,5 @@ test:
 	uv run --locked pytest
 
 lint:
-	uv run --locked ruff check src/ tools/feed_profiler/ scripts/ tests/
-	uv run --locked ruff format --check src/ tools/feed_profiler/ scripts/ tests/
+	uv run --locked ruff check src/ tools/feed_profiler/ scripts/ tests/ dags/
+	uv run --locked ruff format --check src/ tools/feed_profiler/ scripts/ tests/ dags/

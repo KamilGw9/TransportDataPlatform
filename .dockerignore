@@ -2,4 +2,8 @@
 !pyproject.toml
 !uv.lock
 !src/
+!transform/
+!dags/
 **/__pycache__
+transform/target/
+transform/logs/
