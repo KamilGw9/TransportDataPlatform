@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 
 from google.protobuf.message import Message
 from google.transit import gtfs_realtime_pb2
@@ -9,6 +9,9 @@ from mobility.gtfs_rt_fields import (
     optional_field,
     optional_timestamp,
 )
+from mobility.ingestion.archive import describe_error, sha256_hex
+
+SOURCE_ID = "krakow_ztp_m_trip_updates"
 
 
 @dataclass(frozen=True)
@@ -67,3 +70,96 @@ def parse_snapshot(data: bytes) -> TripUpdateSnapshot:
         trip_updates,
         stop_time_updates,
     )
+
+
+@dataclass(frozen=True)
+class TripUpdateLoad:
+    snapshot_sha256: str
+    object_key: str
+    started_at: datetime
+    status: str
+    error: str | None = None
+
+
+# A snapshot stored on two UTC dates has two objects with the same content;
+# either of them will do.
+_SELECT_PENDING_SNAPSHOTS = """
+SELECT DISTINCT ON (attempt.sha256) attempt.sha256, attempt.object_key
+FROM metadata.fetch_attempt AS attempt
+WHERE attempt.source_id = %s
+    AND attempt.status = 'stored'
+    AND NOT EXISTS (
+        SELECT 1 FROM metadata.trip_update_load AS load
+        WHERE load.snapshot_sha256 = attempt.sha256 AND load.status = 'loaded'
+    )
+ORDER BY attempt.sha256, attempt.fetched_at
+"""
+
+
+def pending_snapshots(conn, source_id: str) -> list[tuple[str, str]]:
+    """Return the hash and object key of each stored snapshot not yet loaded."""
+    return conn.execute(_SELECT_PENDING_SNAPSHOTS, (source_id,)).fetchall()
+
+
+_INSERT_LOAD = """
+INSERT INTO metadata.trip_update_load
+    (snapshot_sha256, object_key, started_at, status, error)
+VALUES (%s, %s, %s, %s, %s)
+"""
+
+
+def record_load(conn, load: TripUpdateLoad) -> None:
+    conn.execute(
+        _INSERT_LOAD,
+        (
+            load.snapshot_sha256,
+            load.object_key,
+            load.started_at,
+            load.status,
+            load.error,
+        ),
+    )
+
+
+def load_snapshot(
+    client, bucket: str, conn, snapshot_sha256: str, object_key: str
+) -> TripUpdateLoad:
+    """Load one archived snapshot into staging and record the attempt.
+
+    Never raises: a failure rolls back the snapshot and is recorded as a
+    failed load.
+    """
+    started_at = datetime.now(UTC)
+    try:
+        data = client.get_object(Bucket=bucket, Key=object_key)["Body"].read()
+        if sha256_hex(data) != snapshot_sha256:
+            raise ValueError(f"{object_key} does not match its SHA-256")
+        snapshot = parse_snapshot(data)
+        loaded = TripUpdateLoad(snapshot_sha256, object_key, started_at, "loaded")
+        with conn.transaction():
+            [snapshot_id] = conn.execute(
+                """
+                INSERT INTO staging.trip_update_snapshot
+                    (snapshot_sha256, feed_timestamp)
+                VALUES (%s, %s)
+                RETURNING snapshot_id
+                """,
+                (snapshot_sha256, snapshot.feed_timestamp),
+            ).fetchone()
+            with conn.cursor() as cursor:
+                with cursor.copy("COPY staging.trip_update FROM STDIN") as copy:
+                    for trip_update in snapshot.trip_updates:
+                        copy.write_row((snapshot_id, *trip_update))
+                with cursor.copy("COPY staging.stop_time_update FROM STDIN") as copy:
+                    for stop_time_update in snapshot.stop_time_updates:
+                        copy.write_row((snapshot_id, *stop_time_update))
+            record_load(conn, loaded)
+    except Exception as e:
+        # Same boundary as load_schedule: the failure is recorded after the
+        # rollback so that it is kept.
+        failed = TripUpdateLoad(
+            snapshot_sha256, object_key, started_at, "failed", describe_error(e)
+        )
+        record_load(conn, failed)
+        return failed
+    return loaded
