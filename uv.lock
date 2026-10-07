@@ -714,10 +714,12 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "dbt-core" },
-    { name = "dbt-postgres" },
     { name = "pytest" },
     { name = "ruff" },
+]
+transform = [
+    { name = "dbt-core" },
+    { name = "dbt-postgres" },
 ]
 
 [package.metadata]
@@ -730,10 +732,12 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "dbt-core", specifier = ">=1.12.5" },
-    { name = "dbt-postgres", specifier = ">=1.11.0" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "ruff", specifier = ">=0.16.9" },
+]
+transform = [
+    { name = "dbt-core", specifier = ">=1.12.5" },
+    { name = "dbt-postgres", specifier = ">=1.11.0" },
 ]
 
 [[package]]
