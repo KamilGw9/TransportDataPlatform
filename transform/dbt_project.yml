@@ -4,3 +4,8 @@ profile: mobility
 
 flags:
   send_anonymous_usage_stats: false
+
+models:
+  mobility:
+    marts:
+      +schema: marts

@@ -56,7 +56,7 @@ the configured values. Schemas:
 - `staging`: schedule versions loaded from the RAW ZIP (`staging.schedule_*`) and
   vehicle positions (`staging.vehicle_position*`);
 - `core`: dbt models that join the sources;
-- `marts`: future analytical outputs.
+- `marts`: dbt models that answer analytical questions.
 
 The initial SQL only runs on a new empty PostgreSQL volume. Changes to init SQL or
 `POSTGRES_PASSWORD` do not migrate an existing database. Tables are added by files
@@ -222,6 +222,19 @@ GROUP BY 1
 ORDER BY 1;
 ```
 
+Arrivals at stops and their delays are in `core.stop_arrival_delay`;
+`marts.route_punctuality` counts them per route and hour. Share of on-time
+arrivals per route:
+
+```sql
+SELECT route_short_name,
+       sum(arrivals) AS arrivals,
+       round(100.0 * sum(on_time_arrivals) / sum(arrivals), 1) AS on_time_pct
+FROM marts.route_punctuality
+GROUP BY 1
+ORDER BY 3;
+```
+
 ## Check feed freshness
 
 ```bash
@@ -249,8 +262,8 @@ uv run pytest -m integration
 ```
 
 CI runs them against a fresh PostgreSQL container after `make migrate`, followed
-by `make dbt-build`. The models in `core` are covered by dbt unit tests in
-`transform/models/core/`, which also need the running database.
+by `make dbt-build`. The dbt models are covered by unit tests next to them in
+`transform/models/`, which also need the running database.
 
 ## Troubleshooting
 

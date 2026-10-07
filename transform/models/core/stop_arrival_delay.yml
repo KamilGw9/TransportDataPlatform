@@ -1,0 +1,21 @@
+unit_tests:
+  - name: delay_is_range_between_window_bounds_and_schedule
+    model: stop_arrival_delay
+    given:
+      - input: ref('stop_arrival')
+        rows:
+          - {schedule_sha256: v1, trip_id: t1, service_date: "2026-10-05", stop_sequence: 2, arrived_after: "2026-10-05 10:00:30+00", arrived_by: "2026-10-05 10:01:00+00"}
+          - {schedule_sha256: v1, trip_id: t1, service_date: "2026-10-05", stop_sequence: 3, arrived_after: "2026-10-05 10:03:50+00", arrived_by: "2026-10-05 10:04:20+00"}
+          # A stop sequence the schedule does not have keeps the arrival.
+          - {schedule_sha256: v1, trip_id: t1, service_date: "2026-10-05", stop_sequence: 9, arrived_after: "2026-10-05 10:20:00+00", arrived_by: "2026-10-05 10:20:30+00"}
+      - input: ref('trip_stop_time')
+        rows:
+          - {schedule_sha256: v1, trip_id: t1, service_date: "2026-10-05", stop_sequence: 2, scheduled_arrival: "2026-10-05 10:00:00+00"}
+          - {schedule_sha256: v1, trip_id: t1, service_date: "2026-10-05", stop_sequence: 3, scheduled_arrival: "2026-10-05 10:05:00+00"}
+          # Same stop on another date must not match.
+          - {schedule_sha256: v1, trip_id: t1, service_date: "2026-10-06", stop_sequence: 2, scheduled_arrival: "2026-10-06 10:00:00+00"}
+    expect:
+      rows:
+        - {stop_sequence: 2, min_delay_seconds: 30, max_delay_seconds: 60}
+        - {stop_sequence: 3, min_delay_seconds: -70, max_delay_seconds: -40}
+        - {stop_sequence: 9, min_delay_seconds: null, max_delay_seconds: null}

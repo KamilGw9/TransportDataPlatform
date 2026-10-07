@@ -16,11 +16,14 @@ and expose SQL queries and a basic dashboard.
 2. Run PostgreSQL and MinIO locally with persistent storage.
 3. Archive GTFS/RT with fetch records and extend the Mobilis observation period.
 4. Implement validation, realtime-to-schedule matching, and basic analytical models.
-5. Provide a dashboard for predicted delays, coverage, and data freshness.
+5. Run loading and model builds on a schedule, with the tool chosen in an ADR, so
+   that the analytical models stay current without manual steps.
+6. Provide a dashboard for punctuality, predicted delays, coverage, and data
+   freshness.
 
-After the first working pipeline, planned additions include Airflow orchestration,
-Kafka streaming, realtime history in ClickHouse, monitoring, and replay from the
-archive. Weather, A/T feeds, and AWS are later extensions.
+After the first working pipeline, planned additions include Kafka streaming,
+realtime history in ClickHouse, monitoring, and replay from the archive. Weather,
+A/T feeds, and AWS are later extensions.
 
 ## Principles
 
