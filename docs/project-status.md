@@ -86,11 +86,14 @@ data from that stage is not started. Stages 1 to 3 are complete.
   same PostgreSQL ([ADR 005](adr/005-airflow-scheduling.md)). The
   `refresh_models` DAG runs `mobility load-vehicle-positions` and then
   `dbt build` every 30 minutes, without overlapping runs; dbt builds even if a
-  snapshot failed to load. A run on 2026-10-07 loaded 12 snapshots in 7 s and
-  built and tested the models in 45 s. The `check_freshness` DAG runs
-  `mobility check-freshness` every 5 minutes, so a stale feed shows up as a
-  failed run in the Airflow UI at `http://127.0.0.1:8080`. CI checks that the
-  DAG files import in the Airflow image.
+  snapshot failed to load, and the run is then marked as failed. A run on
+  2026-10-07 loaded 12 snapshots in 7 s and built and tested the models in
+  45 s. The `check_freshness` DAG runs `mobility check-freshness` every 5
+  minutes, so a stale feed shows up as a failed run in the Airflow UI at
+  `http://127.0.0.1:8080`. A task that runs longer than 10 minutes, or a
+  freshness check longer than 2, is stopped and fails. CI checks that the DAG
+  files import in the Airflow image and that a failed load fails a test run of
+  `refresh_models`.
 - Feed profiler with [A/M/T reports](../tools/feed_profiler/data-profile.md),
   which led to starting with Mobilis buses
   ([ADR 001](adr/001-krakow-m-first.md)).
@@ -122,8 +125,7 @@ data from that stage is not started. Stages 1 to 3 are complete.
   without `vehicle.timestamp` gets no service date, and `make dbt-build` warns
   when there is one; none has appeared so far.
 - A snapshot that cannot be loaded is retried, and recorded as failed again, on
-  every run of `refresh_models`, which then marks the load task as failed. This
-  has not happened yet.
+  every run of `refresh_models`, which then fails. This has not happened yet.
 - The position models in `core` are rebuilt from scratch on every build and
   include only positions loaded before it, so they lag the collected data by up
   to 30 minutes plus the length of a run. As views, they took 11 s

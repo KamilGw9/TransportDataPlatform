@@ -41,9 +41,12 @@ postgres:
 check-infra:
 	bash scripts/check_infrastructure.sh
 
+# Test runs of a DAG need a metadata database; this one is SQLite inside the
+# throwaway container, not the airflow database in PostgreSQL.
 check-dags:
 	$(COMPOSE) build airflow-scheduler
-	docker run --rm -v "$(CURDIR)/scripts/check_dags.py:/tmp/check_dags.py:ro" mobility-airflow python /tmp/check_dags.py
+	docker run --rm -v "$(CURDIR)/scripts/check_dags.py:/tmp/check_dags.py:ro" mobility-airflow \
+		bash -c "airflow db migrate > /dev/null && python /tmp/check_dags.py"
 
 # dbt reads the database password from the environment, unlike Compose, which
 # loads .env by itself.

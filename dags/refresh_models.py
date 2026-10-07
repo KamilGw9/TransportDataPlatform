@@ -14,8 +14,10 @@ with DAG(
     catchup=False,
     max_active_runs=1,
     is_paused_upon_creation=False,
-    default_args={"retries": 1, "retry_delay": timedelta(minutes=2)},
+    # A run that hangs on a lock would otherwise block every later run.
+    default_args={"execution_timeout": timedelta(minutes=10)},
 ):
+    # No retries: the next run loads the failed snapshots again anyway.
     load_vehicle_positions = BashOperator(
         task_id="load_vehicle_positions",
         bash_command=f"{MOBILITY_BIN}/mobility load-vehicle-positions",
@@ -26,6 +28,15 @@ with DAG(
         task_id="dbt_build",
         bash_command=f"{MOBILITY_BIN}/dbt build",
         trigger_rule=TriggerRule.ALL_DONE,
+        retries=1,
+        retry_delay=timedelta(minutes=2),
+    )
+    # Airflow judges a run by its last tasks only, so without this a failed
+    # load would leave the run green once dbt_build succeeds.
+    fail_run_on_load_failure = BashOperator(
+        task_id="fail_run_on_load_failure",
+        bash_command="exit 1",
+        trigger_rule=TriggerRule.ONE_FAILED,
     )
 
-    load_vehicle_positions >> dbt_build
+    load_vehicle_positions >> [dbt_build, fail_run_on_load_failure]

@@ -12,6 +12,8 @@ with DAG(
     catchup=False,
     max_active_runs=1,
     is_paused_upon_creation=False,
+    # A hung check would block the next ones without failing.
+    default_args={"execution_timeout": timedelta(minutes=2)},
 ):
     BashOperator(
         task_id="check_freshness",
