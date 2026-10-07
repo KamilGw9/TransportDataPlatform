@@ -1,9 +1,9 @@
-.PHONY: help setup up migrate collect collect-stop down ps logs postgres check-infra dbt-build test lint
+.PHONY: help setup up migrate collect collect-stop airflow down ps logs postgres check-infra dbt-build test lint
 
 COMPOSE := docker compose
 
 help:
-	@printf '%s\n' 'make setup        Prepare local .env (preserves existing values)' 'make up           Start PostgreSQL, MinIO, initialize the bucket and migrate' 'make migrate      Apply SQL migrations (safe to repeat)' 'make collect      Start the GTFS-RT and schedule collectors (runs make up first)' 'make collect-stop Stop both collectors, keeping other services' 'make down         Stop services, retaining all volumes' 'make ps           Show service status' 'make logs         Follow service logs' 'make postgres     Open a SQL session' 'make check-infra  Check SQL and S3 writes across container recreation' 'make dbt-build    Build and test the dbt models in core' 'make test         Run Python tests' 'make lint         Check Python style'
+	@printf '%s\n' 'make setup        Prepare local .env (preserves existing values)' 'make up           Start PostgreSQL, MinIO, initialize the bucket and migrate' 'make migrate      Apply SQL migrations (safe to repeat)' 'make collect      Start the GTFS-RT and schedule collectors (runs make up first)' 'make collect-stop Stop both collectors, keeping other services' 'make airflow      Start Airflow (runs make up first)' 'make down         Stop services, retaining all volumes' 'make ps           Show service status' 'make logs         Follow service logs' 'make postgres     Open a SQL session' 'make check-infra  Check SQL and S3 writes across container recreation' 'make dbt-build    Build and test the dbt models in core' 'make test         Run Python tests' 'make lint         Check Python style'
 
 setup:
 	python3 scripts/setup_env.py
@@ -22,6 +22,9 @@ collect: up
 
 collect-stop:
 	$(COMPOSE) stop collector schedule-collector
+
+airflow: up
+	$(COMPOSE) up -d --build --wait airflow-api-server airflow-scheduler airflow-dag-processor
 
 down:
 	$(COMPOSE) down

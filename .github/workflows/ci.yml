@@ -49,6 +49,7 @@ jobs:
           bash -n scripts/check_infrastructure.sh
           bash -n scripts/migrate.sh
           sh -n infrastructure/docker/minio/init.sh
+          bash -n infrastructure/docker/airflow/init.sh
 
       - name: Build application image
         run: docker build --tag mobility-app .
