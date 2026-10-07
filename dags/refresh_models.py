@@ -22,7 +22,11 @@ with DAG(
         task_id="load_vehicle_positions",
         bash_command=f"{MOBILITY_BIN}/mobility load-vehicle-positions",
     )
-    # The loader fails the task if any snapshot fails, but the others are
+    load_trip_updates = BashOperator(
+        task_id="load_trip_updates",
+        bash_command=f"{MOBILITY_BIN}/mobility load-trip-updates",
+    )
+    # A loader fails its task if any snapshot fails, but the others are
     # committed; one broken snapshot must not stop the models from updating.
     dbt_build = BashOperator(
         task_id="dbt_build",
@@ -40,3 +44,4 @@ with DAG(
     )
 
     load_vehicle_positions >> [dbt_build, fail_run_on_load_failure]
+    load_trip_updates >> [dbt_build, fail_run_on_load_failure]
