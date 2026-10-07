@@ -1,12 +1,12 @@
 # Project status
 
-Last updated: 2026-10-06.
+Last updated: 2026-10-07.
 
-Current stage: 4 of the [project plan](project-plan.md), realtime-to-schedule
-matching. Vehicle positions are matched to scheduled trips on their service
-dates, arrivals at stops are estimated from vehicle states, and the first
-analytical model gives route punctuality. Validation of the source data is not
-started. Stages 1 to 3 are complete.
+Current stage: 5 of the [project plan](project-plan.md), scheduled runs.
+Airflow loads vehicle positions and rebuilds the models every 30 minutes and
+checks feed freshness every 5 minutes. Stage 4 delivered realtime-to-schedule
+matching, arrivals at stops and route punctuality; validation of the source
+data from that stage is not started. Stages 1 to 3 are complete.
 
 ## What works
 
@@ -81,14 +81,24 @@ started. Stages 1 to 3 are complete.
   tables, rebuilt in about 35 s; migrations cover only `metadata` and `staging`
   ([ADR 004](adr/004-dbt-core-models.md)). CI builds the models after the
   migrations.
+- Scheduled runs: `make airflow` starts Airflow 3 in Compose with the
+  LocalExecutor, keeping its metadata in a separate `airflow` database on the
+  same PostgreSQL ([ADR 005](adr/005-airflow-scheduling.md)). The
+  `refresh_models` DAG runs `mobility load-vehicle-positions` and then
+  `dbt build` every 30 minutes, without overlapping runs; dbt builds even if a
+  snapshot failed to load. A run on 2026-10-07 loaded 12 snapshots in 7 s and
+  built and tested the models in 45 s. The `check_freshness` DAG runs
+  `mobility check-freshness` every 5 minutes, so a stale feed shows up as a
+  failed run in the Airflow UI at `http://127.0.0.1:8080`. CI checks that the
+  DAG files import in the Airflow image.
 - Feed profiler with [A/M/T reports](../tools/feed_profiler/data-profile.md),
   which led to starting with Mobilis buses
   ([ADR 001](adr/001-krakow-m-first.md)).
 
 ## Limitations
 
-- Nothing runs `check-freshness` on a schedule or sends alerts, so a stopped
-  collector is noticed only when someone checks.
+- A stale feed fails a run in Airflow, but nothing sends an alert, so it is
+  noticed only when someone opens the UI.
 - Freshness is judged by changes of the content hash. The GTFS-RT header
   timestamp is stored only for VehiclePositions loaded into staging; on those,
   a snapshot reached the collector a median of 8 s after it was generated.
@@ -102,17 +112,21 @@ started. Stages 1 to 3 are complete.
   the collectors were stopped for 17 to 23 hours each night by the laptop's sleep,
   so about 17 hours of realtime data were collected in four days and none of it
   covers midnight. Service dates after midnight are checked only by unit tests.
-  Nothing reports such gaps after the fact.
+  Nothing reports such gaps after the fact. Airflow sleeps with the host too:
+  missed runs are not repeated, and the next run loads everything collected
+  since.
 - Mobilis does not send `start_date` in trip descriptors, so the service date is
   inferred from the schedule. Matching uses the schedule version known at
   download time, not the version that applies on the service date. The time zone
   is fixed to Europe/Warsaw, the `agency_timezone` of Mobilis. A position
   without `vehicle.timestamp` gets no service date, and `make dbt-build` warns
   when there is one; none has appeared so far.
-- `load-vehicle-positions` runs only by hand. A snapshot that cannot be loaded is
-  retried, and recorded as failed again, on every run.
-- The position models in `core` are rebuilt from scratch by `make dbt-build` and
-  include only positions loaded before the last build. As views, they took 11 s
+- A snapshot that cannot be loaded is retried, and recorded as failed again, on
+  every run of `refresh_models`, which then marks the load task as failed. This
+  has not happened yet.
+- The position models in `core` are rebuilt from scratch on every build and
+  include only positions loaded before it, so they lag the collected data by up
+  to 30 minutes plus the length of a run. As views, they took 11 s
   per query over 194,000 positions and 15 s over the 181,000 matched ones; a day
   of continuous collection adds about 230,000. TripUpdates and ServiceAlerts are
   archived but not decoded.
@@ -135,9 +149,8 @@ started. Stages 1 to 3 are complete.
 
 ## Next
 
-Run loading and model builds without manual steps, after deciding between cron
-and Airflow in an ADR, so that the punctuality model stays current. Collect
-continuously for at least a week, including nights, then measure the service
-date inference across midnight and validate the source data. Open questions:
+Keep the host awake and collect for at least a week, including nights, then
+measure the service date inference across midnight and validate the source
+data. Open questions:
 how far the realtime trips cover the schedule, and how accurate the TripUpdates
 predictions are.

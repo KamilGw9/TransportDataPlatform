@@ -43,9 +43,10 @@ changing that name selects different volumes rather than moving existing data.
 | PostgreSQL | `127.0.0.1:5432` | `postgres:5432` |
 | S3 API | `http://127.0.0.1:9000` | `http://minio:9000` |
 | MinIO console | `http://127.0.0.1:9001` | `http://minio:9001` |
+| Airflow UI | `http://127.0.0.1:8080` | `http://airflow-api-server:8080` |
 
-Host ports can be changed with `POSTGRES_PORT`, `MINIO_API_PORT` and
-`MINIO_CONSOLE_PORT` in `.env`; internal ports stay the same. Host ports bind only
+Host ports can be changed with `POSTGRES_PORT`, `MINIO_API_PORT`,
+`MINIO_CONSOLE_PORT` and `AIRFLOW_PORT` in `.env`; internal ports stay the same. Host ports bind only
 to loopback. Use local `.env` values for credentials; do not paste them into logs.
 
 PostgreSQL defaults to database/user `mobility`. `make postgres` opens psql using
@@ -180,6 +181,34 @@ runs `mobility collect-realtime` and `schedule-collector` runs
 `postgres:5432` and `http://minio:9000`. Their logs are rotated at 10 MB, three
 files. `make collect-stop` stops both collectors; `make down` stops everything.
 
+## Run loading and model builds in Airflow
+
+```bash
+make airflow
+```
+
+`make airflow` runs `make up`, builds the Airflow image from
+`infrastructure/docker/airflow/Dockerfile` and starts the API server with the
+web UI, the scheduler and the DAG processor. Before they start, `airflow-init`
+creates the `airflow` database if it is missing and migrates it. The image
+installs `mobility` and dbt in `/opt/mobility/.venv`, separately from Airflow,
+and contains the code, the dbt project and the DAGs from `dags/`, so rebuild it
+with `make airflow` after changing any of them. The UI has no login, because
+it listens only on the loopback address. Run `make setup` first if `.env` was
+created before Airflow was added; it generates `AIRFLOW_JWT_SECRET`, which all
+Airflow components share.
+
+Two DAGs start unpaused:
+
+- `refresh_models` runs `mobility load-vehicle-positions` and then `dbt build`
+  every 30 minutes, one run at a time. dbt builds even when the load task
+  fails, because each snapshot is committed separately.
+- `check_freshness` runs `mobility check-freshness` every 5 minutes and fails
+  when a feed is stale.
+
+Task logs are kept in the `airflow_logs` volume and shown in the UI.
+`make check-dags` builds the image and checks that every DAG file imports.
+
 ## Load vehicle positions and match them to the schedule
 
 ```bash
@@ -195,7 +224,8 @@ others still load. Running the command again loads only new snapshots. Fields
 that the feed leaves unset are stored as `NULL`, not as protobuf defaults.
 
 The position models in `core` are tables, so run `make dbt-build` after loading
-to include the new positions. `core.vehicle_position_match` joins each position
+to include the new positions. With `make airflow` running, both steps run every
+30 minutes. `core.vehicle_position_match` joins each position
 to the schedule version that was the latest archived one when the snapshot was
 first downloaded. Share of positions whose trip was found, per hour:
 
@@ -249,6 +279,7 @@ than 5 minutes; the line names the first one, which separates a stopped collecto
 from failing downloads and from a feed that no longer changes. The command exits
 with status 1 if any feed is stale. A content change means a new SHA-256; the
 Mobilis feeds change on every download because the header timestamp does.
+Airflow runs this check every 5 minutes.
 
 ## Database tests
 
@@ -263,7 +294,8 @@ uv run pytest -m integration
 
 CI runs them against a fresh PostgreSQL container after `make migrate`, followed
 by `make dbt-build`. The dbt models are covered by unit tests next to them in
-`transform/models/`, which also need the running database.
+`transform/models/`, which also need the running database. CI also runs
+`make check-dags`.
 
 ## Troubleshooting
 
@@ -272,6 +304,8 @@ by `make dbt-build`. The dbt models are covered by unit tests next to them in
 - Port already allocated: change the corresponding host port in `.env` and run
   `make up` again.
 - Unhealthy service: inspect `docker compose logs --tail=100 postgres minio`.
+- Airflow does not start: inspect `docker compose logs airflow-init`. Compose
+  reporting `Run make setup` means `.env` lacks `AIRFLOW_JWT_SECRET`.
 - Bucket initialization failed: check MinIO health and credentials, then rerun
   `docker compose run --rm --no-deps minio-init`.
 - Schema missing on an existing database: inspect the database before applying
