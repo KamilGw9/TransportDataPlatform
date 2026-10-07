@@ -35,3 +35,4 @@ ENV DBT_PROJECT_DIR=/opt/mobility/transform \
 
 USER airflow
 WORKDIR /opt/airflow
+COPY dags ./dags
