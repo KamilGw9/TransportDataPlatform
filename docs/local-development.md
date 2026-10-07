@@ -200,9 +200,10 @@ Airflow components share.
 
 Two DAGs start unpaused:
 
-- `refresh_models` runs `mobility load-vehicle-positions` and then `dbt build`
-  every 30 minutes, one run at a time. dbt builds even when the load task
-  fails, because each snapshot is committed separately.
+- `refresh_models` runs `mobility load-vehicle-positions` and
+  `mobility load-trip-updates` side by side and then `dbt build` every 30
+  minutes, one run at a time. dbt builds even when a load task fails, because
+  each snapshot is committed separately.
 - `check_freshness` runs `mobility check-freshness` every 5 minutes and fails
   when a feed is stale.
 
@@ -263,6 +264,34 @@ SELECT route_short_name,
 FROM marts.route_punctuality
 GROUP BY 1
 ORDER BY 3;
+```
+
+## Load trip updates
+
+```bash
+uv run mobility load-trip-updates
+```
+
+The command works like the vehicle position loader, with its attempts in
+`metadata.trip_update_load`. Each snapshot gets a `snapshot_id` in
+`staging.trip_update_snapshot`, one row per trip in `staging.trip_update` and
+one row per predicted stop in `staging.stop_time_update`. A trip is identified
+by `entity_index`, its position in the message, because Mobilis repeats the
+entity id when two vehicles report the same trip. A stop time update must carry
+both the predicted time and the delay, or the snapshot fails to load.
+
+The first load of an archive with several days of snapshots takes several
+minutes and may not fit in the 10-minute limit of an Airflow task, so run it by
+hand before starting Airflow on a new database. Predictions for one stop of a
+trip, as they changed from snapshot to snapshot:
+
+```sql
+SELECT snapshot.feed_timestamp, trip.vehicle_id, stop.arrival_time, stop.arrival_delay
+FROM staging.stop_time_update AS stop
+JOIN staging.trip_update AS trip USING (snapshot_id, entity_index)
+JOIN staging.trip_update_snapshot AS snapshot USING (snapshot_id)
+WHERE trip.trip_id = '1686_50791' AND stop.stop_sequence = 10
+ORDER BY 1;
 ```
 
 ## Check feed freshness
