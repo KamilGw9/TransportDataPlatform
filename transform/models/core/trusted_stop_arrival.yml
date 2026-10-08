@@ -1,0 +1,21 @@
+unit_tests:
+  - name: trusted_arrival_is_first_close_and_short
+    model: trusted_stop_arrival
+    given:
+      - input: ref('stop_arrival_delay')
+        rows:
+          - {trip_id: t1, service_date: "2026-10-05", vehicle_id: "601", stop_sequence: 2, arrived_after: "2026-10-05 08:00:30+00", arrived_by: "2026-10-05 08:01:00+00", distance_to_stop_m: 10}
+          # Two vehicles on one trip: the later arrival does not count.
+          - {trip_id: t1, service_date: "2026-10-05", vehicle_id: "601", stop_sequence: 3, arrived_after: "2026-10-05 08:05:00+00", arrived_by: "2026-10-05 08:05:30+00", distance_to_stop_m: 5}
+          - {trip_id: t1, service_date: "2026-10-05", vehicle_id: "602", stop_sequence: 3, arrived_after: "2026-10-05 08:07:00+00", arrived_by: "2026-10-05 08:07:30+00", distance_to_stop_m: 5}
+          # The same stop of the trip on another service date counts on its own.
+          - {trip_id: t1, service_date: "2026-10-06", vehicle_id: "601", stop_sequence: 3, arrived_after: "2026-10-06 08:05:00+00", arrived_by: "2026-10-06 08:05:30+00", distance_to_stop_m: 5}
+          # Too far from the stop, unknown distance, window across a gap.
+          - {trip_id: t1, service_date: "2026-10-05", vehicle_id: "601", stop_sequence: 4, arrived_after: "2026-10-05 08:10:00+00", arrived_by: "2026-10-05 08:10:30+00", distance_to_stop_m: 80}
+          - {trip_id: t1, service_date: "2026-10-05", vehicle_id: "601", stop_sequence: 5, arrived_after: "2026-10-05 08:15:00+00", arrived_by: "2026-10-05 08:15:30+00", distance_to_stop_m: null}
+          - {trip_id: t1, service_date: "2026-10-05", vehicle_id: "601", stop_sequence: 6, arrived_after: "2026-10-05 08:20:00+00", arrived_by: "2026-10-05 08:22:00+00", distance_to_stop_m: 5}
+    expect:
+      rows:
+        - {service_date: "2026-10-05", vehicle_id: "601", stop_sequence: 2}
+        - {service_date: "2026-10-05", vehicle_id: "601", stop_sequence: 3}
+        - {service_date: "2026-10-06", vehicle_id: "601", stop_sequence: 3}

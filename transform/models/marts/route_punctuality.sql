@@ -1,23 +1,16 @@
 {{ config(materialized='table') }}
 
 -- Punctuality of each route by service date and hour of the scheduled arrival.
--- Only arrivals that can be trusted count: within 50 m of the stop and with a
--- window of at most 60 s, as a longer one spans a gap in collection. An arrival
--- is on time from 1 minute early to 3 minutes late, judged by the middle of its
--- delay range.
+-- An arrival is on time from 1 minute early to 3 minutes late, judged by the
+-- middle of its delay range.
 WITH arrival AS (
-    SELECT DISTINCT ON (trip_id, service_date, stop_sequence)
+    SELECT
         schedule_sha256,
         trip_id,
         service_date,
         scheduled_arrival,
         (min_delay_seconds + max_delay_seconds) / 2.0 AS delay_seconds
-    FROM {{ ref('stop_arrival_delay') }}
-    WHERE distance_to_stop_m <= 50
-        AND arrived_by - arrived_after <= interval '60 seconds'
-    -- When two vehicles report the same trip, the first to arrive served the
-    -- stop.
-    ORDER BY trip_id, service_date, stop_sequence, arrived_by
+    FROM {{ ref('trusted_stop_arrival') }}
 )
 SELECT
     route.route_short_name,
