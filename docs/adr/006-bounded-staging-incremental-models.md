@@ -40,11 +40,13 @@ Four options were considered:
   7 days are deleted after the models have been built. RAW objects in MinIO,
   referenced by `metadata.fetch_attempt`, remain the full record, and a
   command reloads any date range from them.
-- Models over TripUpdates are dbt incremental models partitioned by the local
-  date of the scheduled arrival. A prediction refers to one scheduled arrival,
-  so no period spans two partitions. Each build deletes and recomputes the
-  dates touched by snapshots loaded since the previous build, including
-  snapshots loaded late.
+- Models over TripUpdates are dbt incremental models partitioned by the hour
+  of the scheduled arrival. A prediction refers to one scheduled arrival, so no
+  period spans two partitions. Each build deletes and recomputes the hours
+  touched by snapshots loaded since the previous build, including snapshots
+  loaded late. Partitions of whole dates were tried first: a build after 16
+  minutes of new snapshots recomputed 1.9 million periods in 111 s, against
+  74,000 in 18 s by the hour.
 - Results compact enough to keep, such as the prediction for each arrival at
   fixed horizons and the marts, keep their full history. Intermediate models
   with a row per prediction period follow the staging window.
