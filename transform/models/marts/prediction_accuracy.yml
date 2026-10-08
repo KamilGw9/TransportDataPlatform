@@ -1,0 +1,25 @@
+unit_tests:
+  - name: accuracy_compares_predictions_with_schedule_on_same_arrivals
+    model: prediction_accuracy
+    description: >
+      All on 2026-10-05; Kraków is UTC+2, so 08:00 UTC is service hour 10.
+    given:
+      - input: ref('arrival_prediction')
+        rows:
+          # Accurate prediction, late against the schedule by 60 to 90 s.
+          - {schedule_sha256: v1, trip_id: day, service_date: "2026-10-05", horizon_minutes: 5, scheduled_arrival: "2026-10-05 08:00:00+00", arrived_after: "2026-10-05 08:01:00+00", arrived_by: "2026-10-05 08:01:30+00", predicted_arrival: "2026-10-05 08:01:20+00", min_error_seconds: -10, max_error_seconds: 20}
+          - {schedule_sha256: v1, trip_id: day, service_date: "2026-10-05", horizon_minutes: 1, scheduled_arrival: "2026-10-05 08:00:00+00", arrived_after: "2026-10-05 08:01:00+00", arrived_by: "2026-10-05 08:01:30+00", predicted_arrival: "2026-10-05 08:01:20+00", min_error_seconds: -10, max_error_seconds: 20}
+          # Prediction 100 to 130 s too early, on time against the schedule.
+          - {schedule_sha256: v1, trip_id: day, service_date: "2026-10-05", horizon_minutes: 5, scheduled_arrival: "2026-10-05 08:10:00+00", arrived_after: "2026-10-05 08:10:00+00", arrived_by: "2026-10-05 08:10:30+00", predicted_arrival: "2026-10-05 08:08:20+00", min_error_seconds: -130, max_error_seconds: -100}
+          # No prediction: counts as an arrival, not in the baseline.
+          - {schedule_sha256: v1, trip_id: day, service_date: "2026-10-05", horizon_minutes: 5, scheduled_arrival: "2026-10-05 08:20:00+00", arrived_after: "2026-10-05 08:23:00+00", arrived_by: "2026-10-05 08:23:30+00", predicted_arrival: null, min_error_seconds: null, max_error_seconds: null}
+      - input: source('staging', 'schedule_trip')
+        rows:
+          - {schedule_sha256: v1, trip_id: day, route_id: r143}
+      - input: source('staging', 'schedule_route')
+        rows:
+          - {schedule_sha256: v1, route_id: r143, route_short_name: "143"}
+    expect:
+      rows:
+        - {route_short_name: "143", service_date: "2026-10-05", service_hour: 10, horizon_minutes: 1, arrivals: 1, predicted_arrivals: 1, accurate_predictions: 1, accurate_schedule_times: 0, median_prediction_error_seconds: 5, median_schedule_error_seconds: 75}
+        - {route_short_name: "143", service_date: "2026-10-05", service_hour: 10, horizon_minutes: 5, arrivals: 3, predicted_arrivals: 2, accurate_predictions: 1, accurate_schedule_times: 1, median_prediction_error_seconds: 60, median_schedule_error_seconds: 45}
