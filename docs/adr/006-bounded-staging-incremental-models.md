@@ -38,8 +38,9 @@ Four options were considered:
 
 - Staging is a working window for TripUpdates: rows of snapshots older than
   7 days are deleted after the models have been built. RAW objects in MinIO,
-  referenced by `metadata.fetch_attempt`, remain the full record, and a
-  command reloads any date range from them.
+  referenced by `metadata.fetch_attempt`, remain the full record. A command to
+  reload a date range from them comes with the window, and nothing is deleted
+  until both exist.
 - Models over TripUpdates are dbt incremental models partitioned by the hour
   of the scheduled arrival. A prediction refers to one scheduled arrival, so no
   period spans two partitions. Each build deletes and recomputes the hours
@@ -47,24 +48,47 @@ Four options were considered:
   loaded late. Partitions of whole dates were tried first: a build after 16
   minutes of new snapshots recomputed 1.9 million periods in 111 s, against
   74,000 in 18 s by the hour.
+- New snapshots are found by `snapshot_id`, which assumes one loader at a
+  time: an id is assigned when a row is inserted, not when it is committed, so
+  a snapshot committed after a build that has seen a higher id would never be
+  built. The loader will take a PostgreSQL advisory lock, so that a manual load
+  or a reload from RAW waits for a running load instead of interleaving with it.
 - Results compact enough to keep, such as the prediction for each arrival at
   fixed horizons and the marts, keep their full history. Intermediate models
-  with a row per prediction period follow the staging window.
+  with a row per prediction period follow the staging window. This replaces the
+  point of ADR 004 that everything in `core` can be recomputed from `staging`:
+  outside RAW, `core.arrival_prediction` holds the only copy of predictions
+  older than the window.
+- Hours that have left the staging window are frozen in the models that keep
+  their history. A build will not recompute them, even when a trusted arrival
+  from vehicle positions changes, because their prediction periods are gone and
+  the recomputed arrivals would have no prediction. `core.arrival_prediction`
+  will refuse `--full-refresh`; rebuilding it is a deliberate step after the
+  days it needs have been reloaded from RAW.
 - The rule applies to TripUpdates first. Vehicle positions, which grow about
   30 times more slowly in rows, stay on full rebuilds until a measured build
   time requires the same change.
 
 ## Consequences
 
-Build time and database size depend on the window and the daily volume, not on
-how long collection has run. The steady size of TripUpdates staging is about
-7 GB at the current volume.
+Build time of the prediction periods and the size of staging depend on the
+window and the daily volume, not on how long collection has run. The steady
+size of TripUpdates staging is about 7 GB at the current volume. Models that
+keep their full history still grow with it: `core.arrival_prediction` checks
+every trusted arrival against all of its rows, and the vehicle position models
+and the marts are rebuilt from all of their history.
 
 `dbt build --full-refresh` no longer reproduces the full history by itself: it
 recomputes only the dates still in staging, so older dates must first be
-reloaded from RAW. An incremental model needs tests of both the first and a
-later build, and a mistake in choosing the dates to recompute leaves stale rows
-that a normal build does not repair.
+reloaded from RAW. A change to how arrivals are estimated reaches the
+prediction accuracy of older days only after that reload. An incremental model
+needs tests of both the first and a later build, and a mistake in choosing the
+dates to recompute leaves stale rows that a normal build does not repair.
+
+A snapshot loaded late also moves the ends of periods of trips that it does not
+include, as it changes which snapshots are consecutive. Those periods may lie
+in hours that the snapshot does not touch, and they stay as they were until
+their hour is recomputed for another reason.
 
 Deleting from staging leaves space that PostgreSQL reuses for new rows but does
 not return to the disk, and the WSL disk file does not shrink on its own. If
