@@ -1,12 +1,13 @@
 # Project status
 
-Last updated: 2026-10-07.
+Last updated: 2026-10-08.
 
 Current stage: 5 of the [project plan](project-plan.md), scheduled runs.
 Airflow loads vehicle positions and trip updates and rebuilds the models every
 30 minutes and checks feed freshness every 5 minutes. Stage 4 delivered
-realtime-to-schedule matching, arrivals at stops and route punctuality;
-validation of the source data from that stage is not started. Stages 1 to 3 are
+realtime-to-schedule matching, arrivals at stops, route punctuality and the
+accuracy of TripUpdates predictions; validation of the source data from that
+stage is not started. Stages 1 to 3 are
 complete.
 
 ## What works
@@ -63,6 +64,18 @@ complete.
   trips are keyed by their position in the message. In the samples, Mobilis
   sent only `SCHEDULED` trips and stops, always with both the predicted time
   and the delay.
+- Prediction accuracy: `core.stop_time_prediction` merges the predictions that
+  stayed the same in consecutive snapshots into periods, 4.9 million of them
+  from 15.7 million stop time updates. The predicted time minus the delay
+  equals the scheduled time at every stop, which identifies the trip date.
+  `core.arrival_prediction` takes, for each trusted arrival, the prediction of
+  the arriving vehicle in force 1, 3, 5, 10 and 15 minutes before it, and
+  `marts.prediction_accuracy` counts predictions within 1 minute of the arrival
+  per route, service date, hour and horizon, against the schedule on the same
+  arrivals. Of 44,293 arrivals by 2026-10-08, 99% had a prediction 1 minute
+  before and 90% 15 minutes before. Within 1 minute were 89% of predictions
+  made 1 minute before, 66% at 5 minutes and 41% at 15 minutes, against 29%
+  of scheduled times.
 - Service dates: `core.service_date` lists the dates on which each service of a
   schedule version runs, from `calendar` and `calendar_dates`.
   `core.vehicle_position_service_date` gives each matched position the service
@@ -87,19 +100,24 @@ complete.
   the middle of its delay range. Of 18,233 such arrivals by 2026-10-06, 59.3%
   were on time, 40.4% late and 0.3% early.
 - Models in `core` and `marts` are built by dbt from `transform/`
-  (`make dbt-build`), with unit tests of each model and a uniqueness test on the
-  matching output. The two position models and the punctuality model are
-  tables, rebuilt in about 35 s; migrations cover only `metadata` and `staging`
-  ([ADR 004](adr/004-dbt-core-models.md)). CI builds the models after the
-  migrations.
+  (`make dbt-build`), with unit tests of each model and uniqueness tests on the
+  matching and prediction outputs. The two position models and both marts are
+  tables rebuilt from scratch; migrations cover only `metadata` and `staging`
+  ([ADR 004](adr/004-dbt-core-models.md)). The two prediction models are
+  incremental and recompute only the hours of scheduled arrivals touched by new
+  snapshots or arrivals ([ADR 006](adr/006-bounded-staging-incremental-models.md)):
+  with a few new snapshots, the prediction periods took 18 s against 169 s for a
+  full build, and the result matched a full build row for row. A full
+  `make dbt-build` took 84 s. CI builds the models after the migrations.
 - Scheduled runs: `make airflow` starts Airflow 3 in Compose with the
   LocalExecutor, keeping its metadata in a separate `airflow` database on the
   same PostgreSQL ([ADR 005](adr/005-airflow-scheduling.md)). The
   `refresh_models` DAG runs `mobility load-vehicle-positions` and
   `mobility load-trip-updates` side by side and then `dbt build` every 30
   minutes, without overlapping runs; dbt builds even if a snapshot failed to
-  load, and the run is then marked as failed. A run on 2026-10-07 loaded both
-  feeds in 3 s and built and tested the models in 47 s. The `check_freshness`
+  load, and the run is then marked as failed. A run on 2026-10-08 loaded both
+  feeds in 3 s and built and tested the models, including the incremental
+  prediction models, in 107 s. The `check_freshness`
   DAG runs `mobility check-freshness` every 5 minutes, so a stale feed shows
   up as a failed run in the Airflow UI at `http://127.0.0.1:8080`. A task that
   runs longer than 10 minutes, or a freshness check longer than 2, is stopped
@@ -146,8 +164,20 @@ complete.
 - Staging keeps every stop time update of every TripUpdates snapshot, although
   only 27% of them change between consecutive snapshots. A day of continuous
   collection adds about 7.6 million rows, about 0.9 GB at the measured 124
-  bytes per row. No model uses the trip updates yet. The first load of a
-  backlog of several days can exceed the 10-minute task limit in Airflow.
+  bytes per row, and the archive in MinIO about 0.3 GB; the disk holding both
+  had 83 GB free on 2026-10-08. The 7-day staging window decided in
+  [ADR 006](adr/006-bounded-staging-incremental-models.md), and the reload of
+  older days from RAW, are not implemented yet. The first load of a backlog of
+  several days can exceed the 10-minute task limit in Airflow.
+- Every build of the prediction periods reads all of staging to select the
+  hours to recompute, about 10 s for 15 million rows. A period that ends at the
+  newest snapshot is taken to last 2 minutes past it until its hour is
+  recomputed. A mistake in choosing the hours would leave stale rows that only
+  `--full-refresh` repairs.
+- The prediction accuracy covers the same afternoons and evenings as the
+  punctuality figures, and only arrivals estimated from vehicle states. The
+  schedule is the only baseline; whether Mobilis predicts more than the current
+  delay carried forward is not measured.
 - The punctuality figures come from afternoons and evenings of four days,
   including a Saturday, and say nothing about mornings or nights. Arrivals are
   estimated only where the vehicle reports STOPPED_AT; a vehicle first seen
@@ -167,9 +197,8 @@ complete.
 
 ## Next
 
-Keep the host awake and collect for at least a week, including nights, then
-measure the service date inference across midnight and validate the source
-data. Meanwhile, build dbt models that compare the TripUpdates predictions made
-at fixed times before an arrival with the estimated arrival, and with the
-schedule as a baseline. Open question: how far the realtime trips cover the
-schedule.
+Implement the 7-day TripUpdates staging window and the reload from RAW
+([ADR 006](adr/006-bounded-staging-incremental-models.md)). Keep the host
+awake and collect for at least a week, including nights, then measure the
+service date inference across midnight and validate the source data. Open
+question: how far the realtime trips cover the schedule.

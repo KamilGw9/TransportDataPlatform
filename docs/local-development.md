@@ -294,6 +294,29 @@ WHERE trip.trip_id = '1686_50791' AND stop.stop_sequence = 10
 ORDER BY 1;
 ```
 
+dbt merges these rows into `core.stop_time_prediction`, one row per period in
+which a vehicle kept the same prediction. `core.arrival_prediction` takes the
+prediction in force 1, 3, 5, 10 and 15 minutes before each arrival in
+`core.trusted_stop_arrival`, and `marts.prediction_accuracy` compares them with
+the schedule. Both core models are incremental
+([ADR 006](adr/006-bounded-staging-incremental-models.md)): a normal build
+recomputes only the hours of scheduled arrivals that new snapshots or arrivals
+touch. After a change to their SQL, rebuild them from staging with
+`dbt build --full-refresh --select stop_time_prediction+` in `transform/`.
+Share of predictions within 1 minute of the arrival, with the schedule as a
+baseline:
+
+```sql
+SELECT horizon_minutes,
+       round(100.0 * sum(accurate_predictions) / sum(predicted_arrivals), 1)
+           AS prediction_pct,
+       round(100.0 * sum(accurate_schedule_times) / sum(predicted_arrivals), 1)
+           AS schedule_pct
+FROM marts.prediction_accuracy
+GROUP BY 1
+ORDER BY 1;
+```
+
 ## Check feed freshness
 
 ```bash
