@@ -1,0 +1,225 @@
+"""Check the TripUpdates staging tables against the local PostgreSQL.
+
+Run with the services from make up and the variables from .env loaded:
+    set -a; source .env; set +a
+    uv run pytest -m integration
+"""
+
+import io
+from datetime import UTC, datetime
+
+import psycopg
+import pytest
+from google.transit import gtfs_realtime_pb2
+from psycopg.errors import CheckViolation, ForeignKeyViolation, UniqueViolation
+
+from mobility.ingestion.archive import sha256_hex
+from mobility.trip_updates import load_snapshot, pending_snapshots
+
+pytestmark = pytest.mark.integration
+
+SNAPSHOT = "a" * 64
+
+
+def insert_load(conn: psycopg.Connection, status: str, error: str | None) -> None:
+    conn.execute(
+        """
+        INSERT INTO metadata.trip_update_load
+            (snapshot_sha256, object_key, started_at, status, error)
+        VALUES (%s, 'raw/gtfs_rt/a.pb', %s, %s, %s)
+        """,
+        (SNAPSHOT, datetime(2026, 10, 3, tzinfo=UTC), status, error),
+    )
+
+
+def insert_snapshot(conn: psycopg.Connection) -> int:
+    return conn.execute(
+        """
+        INSERT INTO staging.trip_update_snapshot (snapshot_sha256, feed_timestamp)
+        VALUES (%s, %s)
+        RETURNING snapshot_id
+        """,
+        (SNAPSHOT, datetime(2026, 10, 3, 12, tzinfo=UTC)),
+    ).fetchone()[0]
+
+
+def insert_trip_update(
+    conn: psycopg.Connection, snapshot_id: int, entity_index: int, vehicle_id: str
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO staging.trip_update
+            (snapshot_id, entity_index, entity_id, trip_id, vehicle_id)
+        VALUES (%s, %s, 'trip_1686_42676', '1686_42676', %s)
+        """,
+        (snapshot_id, entity_index, vehicle_id),
+    )
+
+
+def insert_stop_time_update(
+    conn: psycopg.Connection,
+    snapshot_id: int,
+    arrival_time: datetime | None,
+    arrival_delay: int | None,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO staging.stop_time_update
+            (snapshot_id, entity_index, stop_sequence, arrival_time, arrival_delay)
+        VALUES (%s, 0, 2, %s, %s)
+        """,
+        (snapshot_id, arrival_time, arrival_delay),
+    )
+
+
+def test_snapshot_is_loaded_at_most_once(conn: psycopg.Connection) -> None:
+    insert_load(conn, "failed", "DecodeError: truncated message")
+    insert_load(conn, "loaded", None)
+
+    with pytest.raises(UniqueViolation):
+        insert_load(conn, "loaded", None)
+
+
+def test_trip_reported_by_two_vehicles_keeps_both_entities(
+    conn: psycopg.Connection,
+) -> None:
+    snapshot_id = insert_snapshot(conn)
+
+    insert_trip_update(conn, snapshot_id, 0, "867")
+    insert_trip_update(conn, snapshot_id, 1, "869")
+
+    count = conn.execute(
+        "SELECT count(*) FROM staging.trip_update WHERE snapshot_id = %s",
+        (snapshot_id,),
+    ).fetchone()[0]
+    assert count == 2
+
+
+def test_stop_time_update_rejects_unknown_trip_update(
+    conn: psycopg.Connection,
+) -> None:
+    snapshot_id = insert_snapshot(conn)
+
+    with pytest.raises(ForeignKeyViolation):
+        insert_stop_time_update(conn, snapshot_id, None, None)
+
+
+def test_stop_time_update_rejects_arrival_time_without_delay(
+    conn: psycopg.Connection,
+) -> None:
+    snapshot_id = insert_snapshot(conn)
+    insert_trip_update(conn, snapshot_id, 0, "867")
+
+    with pytest.raises(CheckViolation):
+        insert_stop_time_update(
+            conn, snapshot_id, datetime(2026, 10, 3, 12, 5, tzinfo=UTC), None
+        )
+
+
+def snapshot_data(arrival_delays: list[int | None]) -> bytes:
+    """Build a snapshot with one trip whose stops arrive with these delays."""
+    message = gtfs_realtime_pb2.FeedMessage()
+    message.header.gtfs_realtime_version = "2.0"
+    message.header.timestamp = 1791404400
+    trip_update = message.entity.add(id="trip_1686_9067").trip_update
+    trip_update.trip.trip_id = "1686_9067"
+    for stop_sequence, delay in enumerate(arrival_delays, start=1):
+        update = trip_update.stop_time_update.add(stop_sequence=stop_sequence)
+        update.arrival.time = 1791404400 + 60 * stop_sequence
+        if delay is not None:
+            update.arrival.delay = delay
+    return message.SerializeToString()
+
+
+class FakeS3:
+    def __init__(self, data: bytes) -> None:
+        self.data = data
+
+    def get_object(self, Bucket: str, Key: str) -> dict:
+        return {"Body": io.BytesIO(self.data)}
+
+
+def insert_stored_attempt(
+    conn: psycopg.Connection, sha256: str, object_key: str, fetched_at: datetime
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO metadata.fetch_attempt
+            (source_id, url, fetched_at, status, size_bytes, sha256, object_key)
+        VALUES ('test_trip_updates', 'https://example.test/tu.pb', %s,
+            'stored', 10, %s, %s)
+        """,
+        (fetched_at, sha256, object_key),
+    )
+
+
+def test_load_snapshot_stores_trips_and_stops_under_one_snapshot_id(
+    conn: psycopg.Connection,
+) -> None:
+    data = snapshot_data([0, 60])
+    snapshot_sha256 = sha256_hex(data)
+
+    load = load_snapshot(FakeS3(data), "bucket", conn, snapshot_sha256, "a.pb")
+
+    assert load.status == "loaded"
+    assert conn.execute(
+        """
+        SELECT snapshot.feed_timestamp, trip.trip_id, count(*)
+        FROM staging.trip_update_snapshot AS snapshot
+        JOIN staging.trip_update AS trip USING (snapshot_id)
+        JOIN staging.stop_time_update USING (snapshot_id, entity_index)
+        WHERE snapshot.snapshot_sha256 = %s
+        GROUP BY snapshot.feed_timestamp, trip.trip_id
+        """,
+        (snapshot_sha256,),
+    ).fetchall() == [(datetime(2026, 10, 7, 20, 20, tzinfo=UTC), "1686_9067", 2)]
+
+
+def test_pending_snapshots_skip_loaded_and_repeated_ones(
+    conn: psycopg.Connection,
+) -> None:
+    loaded_data = snapshot_data([0])
+    loaded_sha256 = sha256_hex(loaded_data)
+    insert_stored_attempt(
+        conn, loaded_sha256, "loaded.pb", datetime(2026, 10, 3, tzinfo=UTC)
+    )
+    load_snapshot(FakeS3(loaded_data), "bucket", conn, loaded_sha256, "loaded.pb")
+    # The same content stored again after midnight UTC gets a second object.
+    insert_stored_attempt(
+        conn,
+        SNAPSHOT,
+        "date=2026-10-03/a.pb",
+        datetime(2026, 10, 3, 23, 59, tzinfo=UTC),
+    )
+    insert_stored_attempt(
+        conn, SNAPSHOT, "date=2026-10-04/a.pb", datetime(2026, 10, 4, 0, 1, tzinfo=UTC)
+    )
+
+    assert pending_snapshots(conn, "test_trip_updates") == [
+        (SNAPSHOT, "date=2026-10-03/a.pb")
+    ]
+
+
+def test_load_snapshot_rolls_back_snapshot_with_time_but_no_delay(
+    conn: psycopg.Connection,
+) -> None:
+    data = snapshot_data([0, None])
+    snapshot_sha256 = sha256_hex(data)
+
+    load = load_snapshot(FakeS3(data), "bucket", conn, snapshot_sha256, "a.pb")
+
+    assert load.status == "failed"
+    assert load.error.startswith("CheckViolation")
+    # The foreign keys leave no stop time updates without the snapshot row.
+    assert (
+        conn.execute(
+            "SELECT 1 FROM staging.trip_update_snapshot WHERE snapshot_sha256 = %s",
+            (snapshot_sha256,),
+        ).fetchone()
+        is None
+    )
+    [error] = conn.execute(
+        "SELECT error FROM metadata.trip_update_load WHERE snapshot_sha256 = %s",
+        (snapshot_sha256,),
+    ).fetchone()
+    assert error == load.error

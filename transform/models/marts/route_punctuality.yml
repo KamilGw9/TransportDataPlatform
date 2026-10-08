@@ -1,23 +1,17 @@
 unit_tests:
-  - name: punctuality_counts_trusted_first_arrivals
+  - name: punctuality_classifies_arrivals_by_route_and_hour
     model: route_punctuality
     description: >
       All on 2026-10-05; Kraków is UTC+2, so 08:00 UTC is service hour 10.
     given:
-      - input: ref('stop_arrival_delay')
+      - input: ref('trusted_stop_arrival')
         rows:
-          - {schedule_sha256: v1, trip_id: day, service_date: "2026-10-05", stop_sequence: 2, scheduled_arrival: "2026-10-05 08:00:00+00", arrived_after: "2026-10-05 08:00:30+00", arrived_by: "2026-10-05 08:01:00+00", distance_to_stop_m: 10, min_delay_seconds: 30, max_delay_seconds: 60}
-          - {schedule_sha256: v1, trip_id: day, service_date: "2026-10-05", stop_sequence: 3, scheduled_arrival: "2026-10-05 08:05:00+00", arrived_after: "2026-10-05 08:03:20+00", arrived_by: "2026-10-05 08:03:50+00", distance_to_stop_m: 5, min_delay_seconds: -100, max_delay_seconds: -70}
-          - {schedule_sha256: v1, trip_id: day, service_date: "2026-10-05", stop_sequence: 4, scheduled_arrival: "2026-10-05 08:10:00+00", arrived_after: "2026-10-05 08:13:20+00", arrived_by: "2026-10-05 08:13:50+00", distance_to_stop_m: 5, min_delay_seconds: 200, max_delay_seconds: 230}
-          # Two vehicles on one trip: the later arrival does not count.
-          - {schedule_sha256: v1, trip_id: day, service_date: "2026-10-05", stop_sequence: 5, scheduled_arrival: "2026-10-05 08:15:00+00", arrived_after: "2026-10-05 08:20:00+00", arrived_by: "2026-10-05 08:20:30+00", distance_to_stop_m: 5, min_delay_seconds: 300, max_delay_seconds: 330}
-          - {schedule_sha256: v1, trip_id: day, service_date: "2026-10-05", stop_sequence: 5, scheduled_arrival: "2026-10-05 08:15:00+00", arrived_after: "2026-10-05 08:15:00+00", arrived_by: "2026-10-05 08:15:30+00", distance_to_stop_m: 5, min_delay_seconds: 0, max_delay_seconds: 30}
-          # Too far from the stop, unknown distance, window across a gap.
-          - {schedule_sha256: v1, trip_id: day, service_date: "2026-10-05", stop_sequence: 6, scheduled_arrival: "2026-10-05 08:20:00+00", arrived_after: "2026-10-05 08:20:00+00", arrived_by: "2026-10-05 08:20:30+00", distance_to_stop_m: 80, min_delay_seconds: 0, max_delay_seconds: 30}
-          - {schedule_sha256: v1, trip_id: day, service_date: "2026-10-05", stop_sequence: 7, scheduled_arrival: "2026-10-05 08:25:00+00", arrived_after: "2026-10-05 08:25:00+00", arrived_by: "2026-10-05 08:25:30+00", distance_to_stop_m: null, min_delay_seconds: 0, max_delay_seconds: 30}
-          - {schedule_sha256: v1, trip_id: day, service_date: "2026-10-05", stop_sequence: 8, scheduled_arrival: "2026-10-05 08:31:00+00", arrived_after: "2026-10-05 08:30:00+00", arrived_by: "2026-10-05 08:32:00+00", distance_to_stop_m: 5, min_delay_seconds: -60, max_delay_seconds: 60}
+          - {schedule_sha256: v1, trip_id: day, service_date: "2026-10-05", stop_sequence: 2, scheduled_arrival: "2026-10-05 08:00:00+00", min_delay_seconds: 30, max_delay_seconds: 60}
+          - {schedule_sha256: v1, trip_id: day, service_date: "2026-10-05", stop_sequence: 3, scheduled_arrival: "2026-10-05 08:05:00+00", min_delay_seconds: -100, max_delay_seconds: -70}
+          - {schedule_sha256: v1, trip_id: day, service_date: "2026-10-05", stop_sequence: 4, scheduled_arrival: "2026-10-05 08:10:00+00", min_delay_seconds: 200, max_delay_seconds: 230}
+          - {schedule_sha256: v1, trip_id: day, service_date: "2026-10-05", stop_sequence: 5, scheduled_arrival: "2026-10-05 08:15:00+00", min_delay_seconds: 0, max_delay_seconds: 30}
           # 00:30 local on 2026-10-06, on the trip of the 2026-10-05 service.
-          - {schedule_sha256: v1, trip_id: night, service_date: "2026-10-05", stop_sequence: 2, scheduled_arrival: "2026-10-05 22:30:00+00", arrived_after: "2026-10-05 22:30:00+00", arrived_by: "2026-10-05 22:30:30+00", distance_to_stop_m: 5, min_delay_seconds: 0, max_delay_seconds: 30}
+          - {schedule_sha256: v1, trip_id: night, service_date: "2026-10-05", stop_sequence: 2, scheduled_arrival: "2026-10-05 22:30:00+00", min_delay_seconds: 0, max_delay_seconds: 30}
       - input: source('staging', 'schedule_trip')
         rows:
           - {schedule_sha256: v1, trip_id: day, route_id: r143}

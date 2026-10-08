@@ -7,7 +7,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from importlib.metadata import version
 
-from mobility import schedule, vehicle_positions
+from mobility import schedule, trip_updates, vehicle_positions
 from mobility.ingestion import gtfs, gtfs_rt
 from mobility.ingestion.archive import (
     FetchAttempt,
@@ -118,6 +118,25 @@ def load_vehicle_positions(client, bucket: str) -> bool:
     return failed == 0
 
 
+def load_trip_updates(client, bucket: str) -> bool:
+    with connect_postgres() as conn:
+        snapshots = trip_updates.pending_snapshots(conn, trip_updates.SOURCE_ID)
+        failed = 0
+        for snapshot_sha256, object_key in snapshots:
+            load = trip_updates.load_snapshot(
+                client, bucket, conn, snapshot_sha256, object_key
+            )
+            if load.status == "failed":
+                logger.error("%s: load failed: %s", object_key, load.error)
+                failed += 1
+    logger.info(
+        "Loaded %d trip update snapshots, %d failed",
+        len(snapshots) - failed,
+        failed,
+    )
+    return failed == 0
+
+
 def refresh_schedule(client, bucket: str) -> bool:
     archived = run_archive(client, bucket, gtfs.MOBILIS_SCHEDULE, gtfs.archive_schedule)
     # Load even after a failed download: a version archived earlier may not
@@ -186,6 +205,10 @@ def main(argv: list[str] | None = None) -> int:
         help="Load archived Mobilis vehicle positions not yet in staging tables",
     )
     commands.add_parser(
+        "load-trip-updates",
+        help="Load archived Mobilis trip updates not yet in staging tables",
+    )
+    commands.add_parser(
         "check-freshness",
         help="Exit with 1 if a Mobilis GTFS-RT feed has not changed recently",
     )
@@ -218,6 +241,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if load_latest_schedule(client, bucket) else 1
     if args.command == "load-vehicle-positions":
         return 0 if load_vehicle_positions(client, bucket) else 1
+    if args.command == "load-trip-updates":
+        return 0 if load_trip_updates(client, bucket) else 1
     if args.command == "collect-schedule":
         collect_schedule(client, bucket, args.interval)
         return 0

@@ -1,0 +1,88 @@
+models:
+  - name: arrival_prediction
+    data_tests:
+      # Fails if two prediction periods of one vehicle overlap.
+      - unique:
+          arguments:
+            column_name: "(trip_id, service_date, stop_sequence, horizon_minutes)"
+
+unit_tests:
+  - name: arrival_gets_prediction_in_force_at_each_horizon
+    model: arrival_prediction
+    description: >
+      The vehicle arrived between 10:20:00 and 10:20:30, so the horizons fall at
+      10:19, 10:17, 10:15, 10:10 and 10:05; collection had a gap from 10:04 to
+      10:08.
+    overrides:
+      macros:
+        is_incremental: false
+    given:
+      - input: ref('trusted_stop_arrival')
+        rows:
+          - {trip_id: t1, service_date: "2026-10-05", vehicle_id: "601", stop_sequence: 4, scheduled_arrival: "2026-10-05 10:18:00+00", arrived_after: "2026-10-05 10:20:00+00", arrived_by: "2026-10-05 10:20:30+00"}
+          # A stop sequence that the schedule does not have.
+          - {trip_id: t1, service_date: "2026-10-05", vehicle_id: "601", stop_sequence: 9, scheduled_arrival: null, arrived_after: "2026-10-05 10:40:00+00", arrived_by: "2026-10-05 10:40:30+00"}
+      - input: ref('stop_time_prediction')
+        rows:
+          - {trip_id: t1, vehicle_id: "601", stop_sequence: 4, scheduled_arrival: "2026-10-05 10:18:00+00", scheduled_arrival_hour: "2026-10-05 10:00:00+00", predicted_arrival: "2026-10-05 10:18:00+00", in_force_from: "2026-10-05 10:00:00+00", in_force_until: "2026-10-05 10:04:00+00", last_snapshot_id: 1}
+          - {trip_id: t1, vehicle_id: "601", stop_sequence: 4, scheduled_arrival: "2026-10-05 10:18:00+00", scheduled_arrival_hour: "2026-10-05 10:00:00+00", predicted_arrival: "2026-10-05 10:19:00+00", in_force_from: "2026-10-05 10:08:00+00", in_force_until: "2026-10-05 10:16:00+00", last_snapshot_id: 2}
+          - {trip_id: t1, vehicle_id: "601", stop_sequence: 4, scheduled_arrival: "2026-10-05 10:18:00+00", scheduled_arrival_hour: "2026-10-05 10:00:00+00", predicted_arrival: "2026-10-05 10:20:10+00", in_force_from: "2026-10-05 10:16:00+00", in_force_until: "2026-10-05 10:21:00+00", last_snapshot_id: 3}
+          # Another vehicle on the same trip.
+          - {trip_id: t1, vehicle_id: "602", stop_sequence: 4, scheduled_arrival: "2026-10-05 10:18:00+00", scheduled_arrival_hour: "2026-10-05 10:00:00+00", predicted_arrival: "2026-10-05 10:30:00+00", in_force_from: "2026-10-05 10:00:00+00", in_force_until: "2026-10-05 10:21:00+00", last_snapshot_id: 3}
+    expect:
+      rows:
+        - {horizon_minutes: 1, predicted_arrival: "2026-10-05 10:20:10+00", min_error_seconds: -20, max_error_seconds: 10, last_snapshot_id: 3}
+        - {horizon_minutes: 3, predicted_arrival: "2026-10-05 10:20:10+00", min_error_seconds: -20, max_error_seconds: 10, last_snapshot_id: 3}
+        - {horizon_minutes: 5, predicted_arrival: "2026-10-05 10:19:00+00", min_error_seconds: -90, max_error_seconds: -60, last_snapshot_id: 3}
+        - {horizon_minutes: 10, predicted_arrival: "2026-10-05 10:19:00+00", min_error_seconds: -90, max_error_seconds: -60, last_snapshot_id: 3}
+        - {horizon_minutes: 15, predicted_arrival: null, min_error_seconds: null, max_error_seconds: null, last_snapshot_id: 3}
+
+  - name: later_build_recomputes_hours_with_new_predictions_or_arrivals
+    model: arrival_prediction
+    description: >
+      The 08:00 hour has nothing new, the 09:00 hour has newer predictions, and
+      the 10:00 hour has a new arrival, so its old arrival is recomputed too.
+    overrides:
+      macros:
+        is_incremental: true
+    given:
+      # As SQL, so that the fixture does not depend on the columns of the
+      # table in the database, which does not exist yet on a new one.
+      - input: this
+        format: sql
+        rows: |
+          SELECT timestamptz '2026-10-05 08:00+00' AS scheduled_arrival_hour, 5::bigint AS last_snapshot_id,
+              'a'::text AS trip_id, date '2026-10-05' AS service_date, 2 AS stop_sequence,
+              '601'::text AS vehicle_id, timestamptz '2026-10-05 08:10:30+00' AS arrived_by
+          UNION ALL
+          SELECT '2026-10-05 09:00+00', 5, 'b', '2026-10-05', 2, '601', '2026-10-05 09:10:30+00'
+          UNION ALL
+          SELECT '2026-10-05 10:00+00', 5, 'c', '2026-10-05', 2, '601', '2026-10-05 10:10:30+00'
+      - input: ref('trusted_stop_arrival')
+        rows:
+          - {trip_id: a, service_date: "2026-10-05", vehicle_id: "601", stop_sequence: 2, scheduled_arrival: "2026-10-05 08:10:00+00", arrived_after: "2026-10-05 08:10:00+00", arrived_by: "2026-10-05 08:10:30+00"}
+          - {trip_id: b, service_date: "2026-10-05", vehicle_id: "601", stop_sequence: 2, scheduled_arrival: "2026-10-05 09:10:00+00", arrived_after: "2026-10-05 09:10:00+00", arrived_by: "2026-10-05 09:10:30+00"}
+          - {trip_id: c, service_date: "2026-10-05", vehicle_id: "601", stop_sequence: 2, scheduled_arrival: "2026-10-05 10:10:00+00", arrived_after: "2026-10-05 10:10:00+00", arrived_by: "2026-10-05 10:10:30+00"}
+          - {trip_id: d, service_date: "2026-10-05", vehicle_id: "601", stop_sequence: 2, scheduled_arrival: "2026-10-05 10:20:00+00", arrived_after: "2026-10-05 10:20:00+00", arrived_by: "2026-10-05 10:20:30+00"}
+      - input: ref('stop_time_prediction')
+        rows:
+          - {trip_id: other, scheduled_arrival_hour: "2026-10-05 08:00:00+00", last_snapshot_id: 5}
+          - {trip_id: other, scheduled_arrival_hour: "2026-10-05 09:00:00+00", last_snapshot_id: 7}
+          - {trip_id: other, scheduled_arrival_hour: "2026-10-05 10:00:00+00", last_snapshot_id: 5}
+    expect:
+      rows:
+        - {trip_id: b, horizon_minutes: 1, last_snapshot_id: 7}
+        - {trip_id: b, horizon_minutes: 3, last_snapshot_id: 7}
+        - {trip_id: b, horizon_minutes: 5, last_snapshot_id: 7}
+        - {trip_id: b, horizon_minutes: 10, last_snapshot_id: 7}
+        - {trip_id: b, horizon_minutes: 15, last_snapshot_id: 7}
+        - {trip_id: c, horizon_minutes: 1, last_snapshot_id: 5}
+        - {trip_id: c, horizon_minutes: 3, last_snapshot_id: 5}
+        - {trip_id: c, horizon_minutes: 5, last_snapshot_id: 5}
+        - {trip_id: c, horizon_minutes: 10, last_snapshot_id: 5}
+        - {trip_id: c, horizon_minutes: 15, last_snapshot_id: 5}
+        - {trip_id: d, horizon_minutes: 1, last_snapshot_id: 5}
+        - {trip_id: d, horizon_minutes: 3, last_snapshot_id: 5}
+        - {trip_id: d, horizon_minutes: 5, last_snapshot_id: 5}
+        - {trip_id: d, horizon_minutes: 10, last_snapshot_id: 5}
+        - {trip_id: d, horizon_minutes: 15, last_snapshot_id: 5}

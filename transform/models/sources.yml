@@ -12,6 +12,9 @@ sources:
       - name: schedule_stop
       - name: schedule_stop_time
       - name: schedule_trip
+      - name: stop_time_update
+      - name: trip_update
+      - name: trip_update_snapshot
       - name: vehicle_position
         columns:
           # GTFS-RT makes vehicle.timestamp optional, and a position without it
