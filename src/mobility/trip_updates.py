@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, time, timedelta
 
 from google.protobuf.message import Message
 from google.transit import gtfs_realtime_pb2
@@ -109,6 +109,31 @@ ORDER BY attempt.sha256, attempt.fetched_at
 def pending_snapshots(conn, source_id: str) -> list[tuple[str, str]]:
     """Return the hash and object key of each stored snapshot not yet loaded."""
     return conn.execute(_SELECT_PENDING_SNAPSHOTS, (source_id,)).fetchall()
+
+
+# Stored snapshots missing from staging, mostly because they have left the
+# window. The date of an object key is the UTC date of the download.
+_SELECT_SNAPSHOTS_TO_RELOAD = """
+SELECT DISTINCT ON (attempt.sha256) attempt.sha256, attempt.object_key
+FROM metadata.fetch_attempt AS attempt
+WHERE attempt.source_id = %s
+    AND attempt.status = 'stored'
+    AND attempt.fetched_at >= %s
+    AND attempt.fetched_at < %s
+    AND NOT EXISTS (
+        SELECT 1 FROM staging.trip_update_snapshot AS snapshot
+        WHERE snapshot.snapshot_sha256 = attempt.sha256
+    )
+ORDER BY attempt.sha256, attempt.fetched_at
+"""
+
+
+def snapshots_to_reload(
+    conn, source_id: str, first_date: date, last_date: date
+) -> list[tuple[str, str]]:
+    start = datetime.combine(first_date, time(), UTC)
+    end = datetime.combine(last_date + timedelta(days=1), time(), UTC)
+    return conn.execute(_SELECT_SNAPSHOTS_TO_RELOAD, (source_id, start, end)).fetchall()
 
 
 _INSERT_LOAD = """

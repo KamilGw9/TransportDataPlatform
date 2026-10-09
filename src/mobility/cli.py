@@ -4,7 +4,7 @@ import os
 import signal
 import threading
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from importlib.metadata import version
 
 from mobility import schedule, trip_updates, vehicle_positions
@@ -144,6 +144,15 @@ def load_trip_updates(client, bucket: str) -> bool:
         return load_trip_update_snapshots(client, bucket, conn, snapshots)
 
 
+def reload_trip_updates(client, bucket: str, first_date: date, last_date: date) -> bool:
+    with connect_postgres() as conn:
+        trip_updates.lock_staging(conn)
+        snapshots = trip_updates.snapshots_to_reload(
+            conn, trip_updates.SOURCE_ID, first_date, last_date
+        )
+        return load_trip_update_snapshots(client, bucket, conn, snapshots)
+
+
 def refresh_schedule(client, bucket: str) -> bool:
     archived = run_archive(client, bucket, gtfs.MOBILIS_SCHEDULE, gtfs.archive_schedule)
     # Load even after a failed download: a version archived earlier may not
@@ -215,11 +224,31 @@ def main(argv: list[str] | None = None) -> int:
         "load-trip-updates",
         help="Load archived Mobilis trip updates not yet in staging tables",
     )
+    reload_parser = commands.add_parser(
+        "reload-trip-updates",
+        help="Reload archived Mobilis trip updates of UTC dates missing from staging",
+    )
+    reload_parser.add_argument(
+        "--from",
+        dest="first_date",
+        type=date.fromisoformat,
+        required=True,
+        help="First UTC date of download, as YYYY-MM-DD",
+    )
+    reload_parser.add_argument(
+        "--to",
+        dest="last_date",
+        type=date.fromisoformat,
+        required=True,
+        help="Last UTC date of download, as YYYY-MM-DD",
+    )
     commands.add_parser(
         "check-freshness",
         help="Exit with 1 if a Mobilis GTFS-RT feed has not changed recently",
     )
     args = parser.parse_args(argv)
+    if args.command == "reload-trip-updates" and args.last_date < args.first_date:
+        parser.error("--to must not be earlier than --from")
     if args.command is None:
         parser.print_help()
         return 0
@@ -250,6 +279,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if load_vehicle_positions(client, bucket) else 1
     if args.command == "load-trip-updates":
         return 0 if load_trip_updates(client, bucket) else 1
+    if args.command == "reload-trip-updates":
+        ok = reload_trip_updates(client, bucket, args.first_date, args.last_date)
+        return 0 if ok else 1
     if args.command == "collect-schedule":
         collect_schedule(client, bucket, args.interval)
         return 0

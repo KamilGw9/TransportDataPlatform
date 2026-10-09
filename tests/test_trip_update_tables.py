@@ -6,7 +6,7 @@ Run with the services from make up and the variables from .env loaded:
 """
 
 import io
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import psycopg
 import pytest
@@ -19,22 +19,12 @@ from mobility.trip_updates import (
     load_snapshot,
     lock_staging,
     pending_snapshots,
+    snapshots_to_reload,
 )
 
 pytestmark = pytest.mark.integration
 
 SNAPSHOT = "a" * 64
-
-
-def insert_load(conn: psycopg.Connection, status: str, error: str | None) -> None:
-    conn.execute(
-        """
-        INSERT INTO metadata.trip_update_load
-            (snapshot_sha256, object_key, started_at, status, error)
-        VALUES (%s, 'raw/gtfs_rt/a.pb', %s, %s, %s)
-        """,
-        (SNAPSHOT, datetime(2026, 10, 3, tzinfo=UTC), status, error),
-    )
 
 
 def insert_snapshot(conn: psycopg.Connection) -> int:
@@ -77,12 +67,11 @@ def insert_stop_time_update(
     )
 
 
-def test_snapshot_is_loaded_at_most_once(conn: psycopg.Connection) -> None:
-    insert_load(conn, "failed", "DecodeError: truncated message")
-    insert_load(conn, "loaded", None)
+def test_snapshot_is_in_staging_at_most_once(conn: psycopg.Connection) -> None:
+    insert_snapshot(conn)
 
     with pytest.raises(UniqueViolation):
-        insert_load(conn, "loaded", None)
+        insert_snapshot(conn)
 
 
 def test_trip_reported_by_two_vehicles_keeps_both_entities(
@@ -203,6 +192,58 @@ def test_pending_snapshots_skip_loaded_and_repeated_ones(
     assert pending_snapshots(conn, "test_trip_updates") == [
         (SNAPSHOT, "date=2026-10-03/a.pb")
     ]
+
+
+def remove_from_staging(conn: psycopg.Connection, snapshot_sha256: str) -> None:
+    [snapshot_id] = conn.execute(
+        "SELECT snapshot_id FROM staging.trip_update_snapshot"
+        " WHERE snapshot_sha256 = %s",
+        (snapshot_sha256,),
+    ).fetchone()
+    for statement in [
+        "DELETE FROM staging.stop_time_update WHERE snapshot_id = %s",
+        "DELETE FROM staging.trip_update WHERE snapshot_id = %s",
+        "DELETE FROM staging.trip_update_snapshot WHERE snapshot_id = %s",
+    ]:
+        conn.execute(statement, (snapshot_id,))
+
+
+def test_snapshots_to_reload_are_stored_on_the_dates_and_missing_from_staging(
+    conn: psycopg.Connection,
+) -> None:
+    in_staging = snapshot_data([0])
+    insert_stored_attempt(
+        conn, sha256_hex(in_staging), "in.pb", datetime(2026, 10, 3, 8, tzinfo=UTC)
+    )
+    load_snapshot(FakeS3(in_staging), "bucket", conn, sha256_hex(in_staging), "in.pb")
+    insert_stored_attempt(
+        conn, SNAPSHOT, "missing.pb", datetime(2026, 10, 3, 23, 59, tzinfo=UTC)
+    )
+    insert_stored_attempt(
+        conn, "b" * 64, "next_day.pb", datetime(2026, 10, 4, 0, 1, tzinfo=UTC)
+    )
+
+    assert snapshots_to_reload(
+        conn, "test_trip_updates", date(2026, 10, 3), date(2026, 10, 3)
+    ) == [(SNAPSHOT, "missing.pb")]
+
+
+def test_snapshot_removed_from_staging_is_loaded_again(
+    conn: psycopg.Connection,
+) -> None:
+    data = snapshot_data([0, 60])
+    snapshot_sha256 = sha256_hex(data)
+    load_snapshot(FakeS3(data), "bucket", conn, snapshot_sha256, "a.pb")
+    remove_from_staging(conn, snapshot_sha256)
+
+    load = load_snapshot(FakeS3(data), "bucket", conn, snapshot_sha256, "a.pb")
+
+    assert load.status == "loaded"
+    assert conn.execute(
+        "SELECT count(*) FROM metadata.trip_update_load"
+        " WHERE snapshot_sha256 = %s AND status = 'loaded'",
+        (snapshot_sha256,),
+    ).fetchone() == (2,)
 
 
 def test_load_snapshot_rolls_back_snapshot_with_time_but_no_delay(
