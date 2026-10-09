@@ -37,10 +37,10 @@ Four options were considered:
 ## Decision
 
 - Staging is a working window for TripUpdates: rows of snapshots older than
-  7 days are deleted after the models have been built. RAW objects in MinIO,
-  referenced by `metadata.fetch_attempt`, remain the full record. A command to
-  reload a date range from them comes with the window, and nothing is deleted
-  until both exist.
+  7 whole UTC days are deleted after the models have been built from them.
+  RAW objects in MinIO, referenced by `metadata.fetch_attempt`, remain the
+  full record, and a command reloads the snapshots downloaded on a range of
+  UTC dates from them.
 - Models over TripUpdates are dbt incremental models partitioned by the hour
   of the scheduled arrival. A prediction refers to one scheduled arrival, so no
   period spans two partitions. Each build deletes and recomputes the hours
@@ -51,20 +51,27 @@ Four options were considered:
 - New snapshots are found by `snapshot_id`, which assumes one loader at a
   time: an id is assigned when a row is inserted, not when it is committed, so
   a snapshot committed after a build that has seen a higher id would never be
-  built. The loader will take a PostgreSQL advisory lock, so that a manual load
-  or a reload from RAW waits for a running load instead of interleaving with it.
+  built. The loader, the reload and the deletion take one PostgreSQL advisory
+  lock, so that a manual load or a reload waits for a running load instead of
+  interleaving with it.
 - Results compact enough to keep, such as the prediction for each arrival at
   fixed horizons and the marts, keep their full history. Intermediate models
   with a row per prediction period follow the staging window. This replaces the
   point of ADR 004 that everything in `core` can be recomputed from `staging`:
   outside RAW, `core.arrival_prediction` holds the only copy of predictions
   older than the window.
-- Hours that have left the staging window are frozen in the models that keep
-  their history. A build will not recompute them, even when a trusted arrival
-  from vehicle positions changes, because their prediction periods are gone and
-  the recomputed arrivals would have no prediction. `core.arrival_prediction`
-  will refuse `--full-refresh`; rebuilding it is a deliberate step after the
-  days it needs have been reloaded from RAW.
+- Hours without prediction periods are frozen in the models that keep their
+  history. A build does not recompute them, even when a trusted arrival from
+  vehicle positions changes, because the recomputed arrivals would have no
+  prediction. Reloading their dates from RAW brings the periods back, and the
+  next build recomputes them. `core.arrival_prediction` ignores
+  `--full-refresh`.
+- An hour of prediction periods is computed only if staging has snapshots from
+  every UTC date on which it could have been predicted, so that an hour at the
+  edge of a reload is not replaced by one computed from part of its
+  predictions. On 2026-10-09, a snapshot predicted arrivals scheduled from 49
+  minutes before to 3 hours 5 minutes after it was published, so the range
+  checked is 4 hours before to 2 hours after the hour.
 - The rule applies to TripUpdates first. Vehicle positions, which grow about
   30 times more slowly in rows, stay on full rebuilds until a measured build
   time requires the same change.
@@ -78,10 +85,13 @@ keep their full history still grow with it: `core.arrival_prediction` checks
 every trusted arrival against all of its rows, and the vehicle position models
 and the marts are rebuilt from all of their history.
 
-`dbt build --full-refresh` no longer reproduces the full history by itself: it
-recomputes only the dates still in staging, so older dates must first be
-reloaded from RAW. A change to how arrivals are estimated reaches the
-prediction accuracy of older days only after that reload. An incremental model
+`dbt build --full-refresh` no longer reproduces the full history: it rebuilds
+the prediction periods from staging and leaves `core.arrival_prediction` as it
+is. A change to how arrivals are estimated reaches the prediction accuracy of
+older days only after their dates are reloaded from RAW, and rebuilding the
+table from scratch means dropping it by hand. If Mobilis starts predicting
+further than 3 hours ahead, hours at the edge of a reload are computed from
+part of their predictions. An incremental model
 needs tests of both the first and a later build, and a mistake in choosing the
 dates to recompute leaves stale rows that a normal build does not repair.
 
