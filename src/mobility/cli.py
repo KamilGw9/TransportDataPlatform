@@ -153,6 +153,15 @@ def reload_trip_updates(client, bucket: str, first_date: date, last_date: date) 
         return load_trip_update_snapshots(client, bucket, conn, snapshots)
 
 
+def prune_trip_updates() -> None:
+    with connect_postgres() as conn:
+        trip_updates.lock_staging(conn)
+        built_snapshot_id = trip_updates.built_snapshot_id(conn)
+        window_start = trip_updates.staging_window_start(datetime.now(UTC))
+        pruned = trip_updates.prune_staging(conn, window_start, built_snapshot_id)
+    logger.info("Pruned %d trip update snapshots before %s", pruned, window_start)
+
+
 def refresh_schedule(client, bucket: str) -> bool:
     archived = run_archive(client, bucket, gtfs.MOBILIS_SCHEDULE, gtfs.archive_schedule)
     # Load even after a failed download: a version archived earlier may not
@@ -224,6 +233,10 @@ def main(argv: list[str] | None = None) -> int:
         "load-trip-updates",
         help="Load archived Mobilis trip updates not yet in staging tables",
     )
+    commands.add_parser(
+        "prune-trip-updates",
+        help="Delete trip updates older than 7 days from staging after a build",
+    )
     reload_parser = commands.add_parser(
         "reload-trip-updates",
         help="Reload archived Mobilis trip updates of UTC dates missing from staging",
@@ -262,6 +275,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "check-freshness":
         with connect_postgres() as conn:
             return 0 if check_freshness(conn) else 1
+    if args.command == "prune-trip-updates":
+        prune_trip_updates()
+        return 0
 
     client = make_s3_client()
     bucket = os.environ.get("S3_BUCKET", "mobility")

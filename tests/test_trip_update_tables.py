@@ -19,6 +19,7 @@ from mobility.trip_updates import (
     load_snapshot,
     lock_staging,
     pending_snapshots,
+    prune_staging,
     snapshots_to_reload,
 )
 
@@ -285,3 +286,65 @@ def test_staging_lock_is_held_until_the_writer_disconnects() -> None:
 
     with connect_postgres() as other:
         assert try_lock_staging(other)
+
+
+def staged_snapshot(conn: psycopg.Connection, feed_timestamp: datetime) -> int:
+    snapshot_id = conn.execute(
+        """
+        INSERT INTO staging.trip_update_snapshot (snapshot_sha256, feed_timestamp)
+        VALUES (md5(random()::text) || md5(random()::text), %s)
+        RETURNING snapshot_id
+        """,
+        (feed_timestamp,),
+    ).fetchone()[0]
+    insert_trip_update(conn, snapshot_id, 0, "867")
+    insert_stop_time_update(conn, snapshot_id, None, None)
+    return snapshot_id
+
+
+def staged_snapshot_ids(conn: psycopg.Connection, snapshot_ids: list[int]) -> list[int]:
+    return [
+        row[0]
+        for row in conn.execute(
+            "SELECT snapshot_id FROM staging.trip_update_snapshot"
+            " WHERE snapshot_id = ANY(%s) ORDER BY snapshot_id",
+            (snapshot_ids,),
+        )
+    ]
+
+
+def test_prune_staging_deletes_built_snapshots_before_the_window(
+    conn: psycopg.Connection,
+) -> None:
+    # Long before the collected data in the local database.
+    window_start = datetime(2001, 10, 2, tzinfo=UTC)
+    old = staged_snapshot(conn, datetime(2001, 10, 1, 23, 59, tzinfo=UTC))
+    in_window = staged_snapshot(conn, datetime(2001, 10, 2, tzinfo=UTC))
+    # Reloaded from RAW after the last build.
+    old_not_built = staged_snapshot(conn, datetime(2001, 10, 1, 12, tzinfo=UTC))
+
+    pruned = prune_staging(conn, window_start, built_snapshot_id=in_window)
+
+    assert pruned == 1
+    assert staged_snapshot_ids(conn, [old, in_window, old_not_built]) == [
+        in_window,
+        old_not_built,
+    ]
+    assert (
+        conn.execute(
+            "SELECT count(*) FROM staging.stop_time_update WHERE snapshot_id = %s",
+            (old,),
+        ).fetchone()[0]
+        == 0
+    )
+
+
+def test_prune_staging_before_the_first_build_keeps_everything(
+    conn: psycopg.Connection,
+) -> None:
+    old = staged_snapshot(conn, datetime(2001, 10, 1, tzinfo=UTC))
+
+    pruned = prune_staging(conn, datetime(2001, 10, 2, tzinfo=UTC), None)
+
+    assert pruned == 0
+    assert staged_snapshot_ids(conn, [old]) == [old]

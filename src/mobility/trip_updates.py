@@ -111,6 +111,61 @@ def pending_snapshots(conn, source_id: str) -> list[tuple[str, str]]:
     return conn.execute(_SELECT_PENDING_SNAPSHOTS, (source_id,)).fetchall()
 
 
+# Staging keeps the TripUpdates of the last 7 whole UTC days; older ones stay in
+# RAW and can be reloaded (ADR 006).
+STAGING_WINDOW_DAYS = 7
+
+
+def staging_window_start(now: datetime) -> datetime:
+    today = now.astimezone(UTC).date()
+    return datetime.combine(today - timedelta(days=STAGING_WINDOW_DAYS), time(), UTC)
+
+
+def built_snapshot_id(conn) -> int | None:
+    """Return the newest snapshot that the prediction periods were built from.
+
+    None before the first build with any predictions, which prunes nothing.
+    """
+    return conn.execute(
+        "SELECT max(last_snapshot_id) FROM core.stop_time_prediction"
+    ).fetchone()[0]
+
+
+_PRUNE_STAGING = [
+    """
+    CREATE TEMPORARY TABLE pruned_snapshot ON COMMIT DROP AS
+    SELECT snapshot_id FROM staging.trip_update_snapshot
+    WHERE feed_timestamp < %(window_start)s
+        AND snapshot_id <= %(built_snapshot_id)s
+    """,
+    """
+    DELETE FROM staging.stop_time_update
+    WHERE snapshot_id IN (SELECT snapshot_id FROM pruned_snapshot)
+    """,
+    """
+    DELETE FROM staging.trip_update
+    WHERE snapshot_id IN (SELECT snapshot_id FROM pruned_snapshot)
+    """,
+    """
+    DELETE FROM staging.trip_update_snapshot
+    WHERE snapshot_id IN (SELECT snapshot_id FROM pruned_snapshot)
+    """,
+]
+
+
+def prune_staging(conn, window_start: datetime, built_snapshot_id: int | None) -> int:
+    """Delete snapshots older than the window and return how many there were.
+
+    A snapshot newer than the last build is kept, so that a reload finished
+    while the models were being built is not deleted before they use it.
+    """
+    params = {"window_start": window_start, "built_snapshot_id": built_snapshot_id}
+    with conn.transaction():
+        for statement in _PRUNE_STAGING:
+            cursor = conn.execute(statement, params)
+    return cursor.rowcount
+
+
 # Stored snapshots missing from staging, mostly because they have left the
 # window. The date of an object key is the UTC date of the download.
 _SELECT_SNAPSHOTS_TO_RELOAD = """

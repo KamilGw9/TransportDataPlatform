@@ -1,10 +1,11 @@
 """Check TripUpdates parsing on GTFS-RT messages built in memory."""
 
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 from google.transit import gtfs_realtime_pb2
 
-from mobility.trip_updates import parse_snapshot
+from mobility.trip_updates import parse_snapshot, staging_window_start
 
 StopTimeUpdate = gtfs_realtime_pb2.TripUpdate.StopTimeUpdate
 
@@ -126,3 +127,10 @@ def test_parse_snapshot_reads_skipped_stop_without_times() -> None:
         None,
         None,
     )
+
+
+def test_staging_window_starts_at_utc_midnight_seven_days_before() -> None:
+    # Already 10 October in Kraków, still 9 October in UTC.
+    now = datetime(2026, 10, 10, 0, 30, tzinfo=ZoneInfo("Europe/Warsaw"))
+
+    assert staging_window_start(now) == datetime(2026, 10, 2, tzinfo=UTC)
