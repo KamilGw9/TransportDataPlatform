@@ -118,24 +118,30 @@ def load_vehicle_positions(client, bucket: str) -> bool:
     return failed == 0
 
 
-def load_trip_updates(client, bucket: str) -> bool:
-    with connect_postgres() as conn:
-        trip_updates.lock_staging(conn)
-        snapshots = trip_updates.pending_snapshots(conn, trip_updates.SOURCE_ID)
-        failed = 0
-        for snapshot_sha256, object_key in snapshots:
-            load = trip_updates.load_snapshot(
-                client, bucket, conn, snapshot_sha256, object_key
-            )
-            if load.status == "failed":
-                logger.error("%s: load failed: %s", object_key, load.error)
-                failed += 1
+def load_trip_update_snapshots(
+    client, bucket: str, conn, snapshots: list[tuple[str, str]]
+) -> bool:
+    failed = 0
+    for snapshot_sha256, object_key in snapshots:
+        load = trip_updates.load_snapshot(
+            client, bucket, conn, snapshot_sha256, object_key
+        )
+        if load.status == "failed":
+            logger.error("%s: load failed: %s", object_key, load.error)
+            failed += 1
     logger.info(
         "Loaded %d trip update snapshots, %d failed",
         len(snapshots) - failed,
         failed,
     )
     return failed == 0
+
+
+def load_trip_updates(client, bucket: str) -> bool:
+    with connect_postgres() as conn:
+        trip_updates.lock_staging(conn)
+        snapshots = trip_updates.pending_snapshots(conn, trip_updates.SOURCE_ID)
+        return load_trip_update_snapshots(client, bucket, conn, snapshots)
 
 
 def refresh_schedule(client, bucket: str) -> bool:
