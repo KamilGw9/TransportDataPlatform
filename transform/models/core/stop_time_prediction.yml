@@ -104,3 +104,40 @@ unit_tests:
       rows:
         - {trip_id: night, scheduled_arrival_hour: "2026-10-04 22:00:00+00", predicted_arrival: "2026-10-04 22:11:00+00", in_force_from: "2026-10-04 21:58:30+00", in_force_until: "2026-10-04 21:59:30+00", last_snapshot_id: 3}
         - {trip_id: night, scheduled_arrival_hour: "2026-10-04 22:00:00+00", predicted_arrival: "2026-10-04 22:12:00+00", in_force_from: "2026-10-04 21:59:30+00", in_force_until: "2026-10-04 22:01:30+00", last_snapshot_id: 2}
+
+  - name: hours_next_to_dates_missing_from_staging_are_not_computed
+    model: stop_time_prediction
+    description: >
+      Staging has the window from 2026-10-03 and 2026-10-01 reloaded from RAW,
+      but not 2026-09-30 or 2026-10-02. Only the arrival at 21:50 on
+      2026-10-01 lies far enough from both missing dates.
+    overrides:
+      macros:
+        is_incremental: true
+    given:
+      - input: this
+        format: sql
+        rows: |
+          SELECT timestamptz '2026-10-03 12:00+00' AS scheduled_arrival_hour, 1::bigint AS last_snapshot_id
+      - input: source('staging', 'trip_update_snapshot')
+        rows:
+          - {snapshot_id: 1, feed_timestamp: "2026-10-03 12:00:00+00"}
+          - {snapshot_id: 2, feed_timestamp: "2026-10-01 22:30:00+00"}
+          - {snapshot_id: 3, feed_timestamp: "2026-10-01 03:00:00+00"}
+      - input: source('staging', 'trip_update')
+        rows:
+          - {snapshot_id: 1, entity_index: 0, trip_id: live, vehicle_id: "601"}
+          - {snapshot_id: 2, entity_index: 0, trip_id: evening, vehicle_id: "602"}
+          - {snapshot_id: 2, entity_index: 1, trip_id: late_evening, vehicle_id: "603"}
+          - {snapshot_id: 3, entity_index: 0, trip_id: night, vehicle_id: "604"}
+      - input: source('staging', 'stop_time_update')
+        rows:
+          - {snapshot_id: 1, entity_index: 0, stop_sequence: 2, arrival_time: "2026-10-03 12:10:00+00", arrival_delay: 0}
+          - {snapshot_id: 2, entity_index: 0, stop_sequence: 2, arrival_time: "2026-10-01 21:50:00+00", arrival_delay: 0}
+          # Could also be predicted on 2026-10-02.
+          - {snapshot_id: 2, entity_index: 1, stop_sequence: 2, arrival_time: "2026-10-01 23:10:00+00", arrival_delay: 0}
+          # Could also be predicted on 2026-09-30.
+          - {snapshot_id: 3, entity_index: 0, stop_sequence: 2, arrival_time: "2026-10-01 03:20:00+00", arrival_delay: 0}
+    expect:
+      rows:
+        - {trip_id: evening, scheduled_arrival_hour: "2026-10-01 21:00:00+00", in_force_from: "2026-10-01 22:30:00+00", in_force_until: "2026-10-01 22:32:00+00", last_snapshot_id: 2}

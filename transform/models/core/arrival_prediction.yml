@@ -42,6 +42,8 @@ unit_tests:
     description: >
       The 08:00 hour has nothing new, the 09:00 hour has newer predictions, and
       the 10:00 hour has a new arrival, so its old arrival is recomputed too.
+      The 07:00 hour has a new arrival too, but its predictions have left the
+      staging window.
     overrides:
       macros:
         is_incremental: true
@@ -64,6 +66,7 @@ unit_tests:
           - {trip_id: b, service_date: "2026-10-05", vehicle_id: "601", stop_sequence: 2, scheduled_arrival: "2026-10-05 09:10:00+00", arrived_after: "2026-10-05 09:10:00+00", arrived_by: "2026-10-05 09:10:30+00"}
           - {trip_id: c, service_date: "2026-10-05", vehicle_id: "601", stop_sequence: 2, scheduled_arrival: "2026-10-05 10:10:00+00", arrived_after: "2026-10-05 10:10:00+00", arrived_by: "2026-10-05 10:10:30+00"}
           - {trip_id: d, service_date: "2026-10-05", vehicle_id: "601", stop_sequence: 2, scheduled_arrival: "2026-10-05 10:20:00+00", arrived_after: "2026-10-05 10:20:00+00", arrived_by: "2026-10-05 10:20:30+00"}
+          - {trip_id: e, service_date: "2026-10-05", vehicle_id: "601", stop_sequence: 2, scheduled_arrival: "2026-10-05 07:20:00+00", arrived_after: "2026-10-05 07:20:00+00", arrived_by: "2026-10-05 07:20:30+00"}
       - input: ref('stop_time_prediction')
         rows:
           - {trip_id: other, scheduled_arrival_hour: "2026-10-05 08:00:00+00", last_snapshot_id: 5}

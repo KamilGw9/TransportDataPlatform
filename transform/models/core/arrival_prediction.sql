@@ -2,6 +2,7 @@
     materialized='incremental',
     incremental_strategy='delete+insert',
     unique_key='scheduled_arrival_hour',
+    full_refresh=false,
 ) }}
 
 -- The TripUpdates prediction in force 1, 3, 5, 10 and 15 minutes before each
@@ -13,7 +14,10 @@
 --
 -- The prediction periods follow the staging window, but this model keeps its
 -- history (ADR 006): a build recomputes only the hours whose predictions
--- changed since it last ran, or which have arrivals it has not seen.
+-- changed since it last ran, or which have arrivals it has not seen. Hours
+-- without prediction periods are frozen, as recomputing them would replace
+-- their predictions with nulls; reloading their dates from RAW brings the
+-- periods back. For the same reason, --full-refresh leaves this table as it is.
 WITH arrival AS (
     SELECT
         schedule_sha256,
@@ -49,6 +53,7 @@ changed_hour AS (
     UNION
     SELECT arrival.scheduled_arrival_hour
     FROM arrival
+    JOIN prediction_hour USING (scheduled_arrival_hour)
     WHERE NOT EXISTS (
         SELECT 1
         FROM {{ this }} AS built
