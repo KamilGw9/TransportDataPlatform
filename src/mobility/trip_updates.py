@@ -13,6 +13,16 @@ from mobility.ingestion.archive import describe_error, sha256_hex
 
 SOURCE_ID = "krakow_ztp_m_trip_updates"
 
+# The incremental models find new snapshots by snapshot_id, which is assigned on
+# insert but becomes visible on commit. With two writers, a lower id could be
+# committed after a build has moved past it, so every writer to the TripUpdates
+# staging tables holds this advisory lock until it disconnects (ADR 006).
+STAGING_LOCK_KEY = 6001
+
+
+def lock_staging(conn) -> None:
+    conn.execute("SELECT pg_advisory_lock(%s)", (STAGING_LOCK_KEY,))
+
 
 @dataclass(frozen=True)
 class TripUpdateSnapshot:

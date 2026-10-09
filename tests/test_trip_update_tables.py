@@ -13,8 +13,13 @@ import pytest
 from google.transit import gtfs_realtime_pb2
 from psycopg.errors import CheckViolation, ForeignKeyViolation, UniqueViolation
 
-from mobility.ingestion.archive import sha256_hex
-from mobility.trip_updates import load_snapshot, pending_snapshots
+from mobility.ingestion.archive import connect_postgres, sha256_hex
+from mobility.trip_updates import (
+    STAGING_LOCK_KEY,
+    load_snapshot,
+    lock_staging,
+    pending_snapshots,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -223,3 +228,19 @@ def test_load_snapshot_rolls_back_snapshot_with_time_but_no_delay(
         (snapshot_sha256,),
     ).fetchone()
     assert error == load.error
+
+
+def try_lock_staging(conn: psycopg.Connection) -> bool:
+    return conn.execute(
+        "SELECT pg_try_advisory_lock(%s)", (STAGING_LOCK_KEY,)
+    ).fetchone()[0]
+
+
+def test_staging_lock_is_held_until_the_writer_disconnects() -> None:
+    with connect_postgres() as writer:
+        lock_staging(writer)
+        with connect_postgres() as other:
+            assert not try_lock_staging(other)
+
+    with connect_postgres() as other:
+        assert try_lock_staging(other)

@@ -120,6 +120,7 @@ def load_vehicle_positions(client, bucket: str) -> bool:
 
 def load_trip_updates(client, bucket: str) -> bool:
     with connect_postgres() as conn:
+        trip_updates.lock_staging(conn)
         snapshots = trip_updates.pending_snapshots(conn, trip_updates.SOURCE_ID)
         failed = 0
         for snapshot_sha256, object_key in snapshots:
