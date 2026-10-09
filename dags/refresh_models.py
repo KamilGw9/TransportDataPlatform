@@ -35,6 +35,12 @@ with DAG(
         retries=1,
         retry_delay=timedelta(minutes=2),
     )
+    # Only after a successful build: the prediction periods must be built from
+    # snapshots before they leave staging (ADR 006).
+    prune_trip_updates = BashOperator(
+        task_id="prune_trip_updates",
+        bash_command=f"{MOBILITY_BIN}/mobility prune-trip-updates",
+    )
     # Airflow judges a run by its last tasks only, so without this a failed
     # load would leave the run green once dbt_build succeeds.
     fail_run_on_load_failure = BashOperator(
@@ -45,3 +51,4 @@ with DAG(
 
     load_vehicle_positions >> [dbt_build, fail_run_on_load_failure]
     load_trip_updates >> [dbt_build, fail_run_on_load_failure]
+    dbt_build >> prune_trip_updates
