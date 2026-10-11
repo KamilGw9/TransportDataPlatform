@@ -184,9 +184,20 @@ complete.
   position snapshot with the matched ones, and the uniqueness test reads every
   match; both grow with history, but this has not been measured beyond 530,000
   positions. ServiceAlerts are archived but not decoded.
-- The incremental models assume one dbt build at a time: two builds at once
-  would add the same positions twice. Airflow runs one at a time, but a manual
-  `make dbt-build` during a run is not prevented.
+- The incremental models assume one dbt build at a time. Two builds at once
+  would add the same positions twice, and the arrival models of one could skip
+  the service dates of positions dated by the other for good, because
+  `built_at` is when a build started its transaction, not when it committed.
+  Airflow runs one at a time, but a manual `make dbt-build` during a run is not
+  prevented; `dbt build --full-refresh --select vehicle_position_match+`
+  repairs both.
+- A schedule version is recorded in `metadata.fetch_attempt` only after its
+  download and upload, a few seconds after its `fetched_at`. A position
+  snapshot downloaded and matched within those seconds keeps the previous
+  version, as a match is never revised.
+- The arrival models replace the rows of each service date they recompute, so a
+  date that no longer gives any arrival would keep its old rows. New positions
+  only add observations, which makes this unlikely, but it is not checked.
 - Staging keeps every stop time update of every TripUpdates snapshot, although
   only 27% of them change between consecutive snapshots. A day of continuous
   collection adds about 7.6 million rows, about 0.9 GB at the measured 124
