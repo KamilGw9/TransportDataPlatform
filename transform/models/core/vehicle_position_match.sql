@@ -19,25 +19,31 @@ schedule_version AS (
         ON schedule_load.schedule_sha256 = attempt.sha256
         AND schedule_load.status = 'loaded'
     WHERE attempt.source_id = 'krakow_ztp_m' AND attempt.status <> 'failed'
+),
+-- Chosen per snapshot, not per position: a lookup for each of 527,000
+-- positions took 87 s of a 89 s build on 2026-10-11.
+snapshot_version AS (
+    SELECT snapshot_fetch.*, version.schedule_sha256
+    FROM snapshot_fetch
+    LEFT JOIN LATERAL (
+        SELECT schedule_version.schedule_sha256
+        FROM schedule_version
+        WHERE schedule_version.fetched_at <= snapshot_fetch.first_fetched_at
+        ORDER BY schedule_version.fetched_at DESC
+        LIMIT 1
+    ) AS version ON true
 )
 SELECT
     position.snapshot_sha256,
-    snapshot_fetch.first_fetched_at,
+    snapshot_version.first_fetched_at,
     position.entity_id,
     position.trip_id,
     position.route_id,
-    version.schedule_sha256,
+    snapshot_version.schedule_sha256,
     trip.trip_id IS NOT NULL AS trip_found,
     trip.route_id = position.route_id AS route_matches
 FROM {{ source('staging', 'vehicle_position') }} AS position
-JOIN snapshot_fetch USING (snapshot_sha256)
-LEFT JOIN LATERAL (
-    SELECT schedule_version.schedule_sha256
-    FROM schedule_version
-    WHERE schedule_version.fetched_at <= snapshot_fetch.first_fetched_at
-    ORDER BY schedule_version.fetched_at DESC
-    LIMIT 1
-) AS version ON true
+JOIN snapshot_version USING (snapshot_sha256)
 LEFT JOIN {{ source('staging', 'schedule_trip') }} AS trip
-    ON trip.schedule_sha256 = version.schedule_sha256
+    ON trip.schedule_sha256 = snapshot_version.schedule_sha256
     AND trip.trip_id = position.trip_id
