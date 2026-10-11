@@ -34,7 +34,10 @@ waiting_since AS (
     FROM {{ source('metadata', 'fetch_attempt') }}
     WHERE source_id = 'krakow_ztp_m'
         AND status <> 'failed'
-        AND fetched_at > (SELECT max(fetched_at) FROM schedule_version)
+        -- Until the first version loads, snapshots wait for it too.
+        AND fetched_at > (
+            SELECT coalesce(max(fetched_at), '-infinity') FROM schedule_version
+        )
 ),
 new_snapshot AS (
     SELECT *
