@@ -1,57 +1,83 @@
 # Transport data platform
 
-An urban transport data platform for Kraków: GTFS and GTFS-Realtime history,
-predicted delay analysis, and data quality monitoring.
+A data platform for Kraków public transport, built on the GTFS schedule and the
+GTFS-Realtime feeds of Mobilis buses (`krakow_ztp_m`). It keeps a history of
+vehicle positions and trip updates, matches them to the schedule, and measures
+how punctual the buses are and how accurate their predicted arrival times are.
 
-The repository currently contains a Python application scaffold, a feed collection
-and profiling tool, results from a short study of the A/M/T feeds, and RAW archiving
-of the Mobilis (`krakow_ztp_m`) schedule ZIP in local S3 storage. Estimating arrival
-windows from vehicle states still requires validation.
+## How data flows
 
-- [Profiler setup and usage](tools/feed_profiler/README.md)
-- [Profiling findings](tools/feed_profiler/data-profile.md)
+Two collectors download the realtime feeds every 30 seconds and the schedule
+every hour, and store each file unchanged in S3-compatible storage (MinIO) under
+a key containing its SHA-256 hash. Every download attempt, including failed
+ones, is recorded in PostgreSQL. Loaders decode the stored files into `staging`
+tables, from which dbt builds the `core` and `marts` models: matching positions
+to scheduled trips, arrivals at stops, route punctuality and prediction
+accuracy. Airflow runs the loaders and the dbt build every 30 minutes and checks
+feed freshness every 5 minutes. Since the original files are kept, staging and
+the models can be rebuilt from the archive.
+
+## Results so far
+
+The data was collected in the first week of October 2026, mostly in the
+afternoons and evenings, because collection stopped while the laptop slept. Of
+18,233 arrivals, 59% were on time (from 1 minute early to 3 minutes late) and
+40% late. Predictions made 1 minute before an arrival were within a minute of it
+in 89% of cases, and those made 15 minutes before in 41%, while the scheduled
+time was within a minute in 29%. The figures say nothing about mornings or
+nights; [project status](docs/project-status.md) describes how they are computed
+and what limits them.
+
+## Documentation
+
+- [Current status and limitations](docs/project-status.md)
 - [Project plan](docs/project-plan.md)
-- [Current status](docs/project-status.md)
-- [Why Kraków and Mobilis](docs/adr/001-krakow-m-first.md)
-- [Local PostgreSQL and S3 storage](docs/local-development.md)
+- [Local setup and lifecycle](docs/local-development.md)
+- Decisions: [Kraków Mobilis first](docs/adr/001-krakow-m-first.md),
+  [local storage](docs/adr/002-local-storage.md),
+  [fetch records](docs/adr/003-fetch-records.md),
+  [dbt for core models](docs/adr/004-dbt-core-models.md),
+  [Airflow scheduling](docs/adr/005-airflow-scheduling.md),
+  [bounded staging and incremental models](docs/adr/006-bounded-staging-incremental-models.md)
+- [Feed profiler](tools/feed_profiler/README.md) and its
+  [findings](tools/feed_profiler/data-profile.md), from the study that preceded
+  the pipeline
 
-## Local infrastructure
+## Running locally
 
-```bash
-make setup
-make up
-make check-infra
-make collect    # optional: collect GTFS-RT every 30 s and the schedule hourly
-make dbt-build  # build and test the dbt models in core
-make airflow    # optional: load positions and rebuild models every 30 minutes
-```
-
-PostgreSQL is available at `127.0.0.1:5432`; the S3 endpoint is
-`http://127.0.0.1:9000`, with a console at `http://127.0.0.1:9001`.
-Credentials are in the ignored `.env`. `make down` retains database and object
-volumes. The first MinIO source build takes several minutes; see the
-[local setup and lifecycle notes](docs/local-development.md).
-
-## Development environment
-
-Required tool: uv. The project uses Python 3.12.
+Requirements: Docker with Compose v2, GNU Make, and uv. The project uses
+Python 3.12.
 
 ```bash
-uv sync --locked
-uv run mobility --help
-uv run mobility --version
-uv run pytest
-uv run pytest -m integration   # needs make up and the variables from .env
-uv run ruff check src/ tools/feed_profiler/
-uv run ruff format --check src/ tools/feed_profiler/
+make setup      # create .env with generated passwords
+make up         # PostgreSQL, MinIO, bucket and migrations
+make collect    # collect GTFS-RT every 30 s and the schedule hourly
+make airflow    # load data and rebuild models every 30 minutes
 ```
 
-Archive the current Mobilis schedule and one snapshot of each realtime feed
-(requires running services, see
-[local setup](docs/local-development.md#archive-the-gtfs-schedule)):
+PostgreSQL is available at `127.0.0.1:5432`, the S3 endpoint at
+`http://127.0.0.1:9000` with a console at `http://127.0.0.1:9001`, and the
+Airflow UI at `http://127.0.0.1:8080`. Credentials are in the ignored `.env`.
+`make down` stops everything and keeps the database and object volumes. The
+first MinIO source build takes several minutes.
+
+Without Airflow, the same steps can be run by hand:
 
 ```bash
 set -a; source .env; set +a
-uv run mobility archive-schedule
-uv run mobility archive-realtime
+uv run mobility load-vehicle-positions
+uv run mobility load-trip-updates
+make dbt-build
+```
+
+`uv run mobility --help` lists the other commands.
+
+## Development
+
+```bash
+uv sync --locked
+make lint
+make test
+uv run pytest -m integration   # needs make up and the variables from .env
+make check-dags                # import the DAGs in the Airflow image
 ```
