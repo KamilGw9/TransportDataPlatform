@@ -230,7 +230,9 @@ The position models in `core` are incremental tables, so run `make dbt-build`
 after loading to add the new positions. With `make airflow` running, both steps
 run every 30 minutes. After a change to their SQL, rebuild them from staging
 with `dbt build --full-refresh --select vehicle_position_match+` in
-`transform/`. `core.vehicle_position_match` joins each position
+`transform/`. A database built before these models became incremental needs
+this once as well: its tables lack the `built_at` column that an incremental
+build reads. `core.vehicle_position_match` joins each position
 to the schedule version that was the latest archived one when the snapshot was
 first downloaded. Share of positions whose trip was found, per hour:
 
