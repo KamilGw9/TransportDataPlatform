@@ -1,6 +1,7 @@
 -- Position snapshots in staging that are still not matched, because a schedule
 -- version archived before them has not loaded (ADR 006). The schedule collector
--- retries the load every hour, so after 2 hours a retry has failed too.
+-- retries the load every hour, so after 2 hours a retry has failed too. A
+-- snapshot with no vehicles has nothing to match and never gets a row.
 SELECT
     snapshot.snapshot_sha256,
     min(attempt.fetched_at) AS first_fetched_at
@@ -14,5 +15,10 @@ WHERE NOT EXISTS (
     FROM {{ ref('vehicle_position_match') }} AS matched
     WHERE matched.snapshot_sha256 = snapshot.snapshot_sha256
 )
+    AND EXISTS (
+        SELECT 1
+        FROM {{ source('staging', 'vehicle_position') }} AS position
+        WHERE position.snapshot_sha256 = snapshot.snapshot_sha256
+    )
 GROUP BY snapshot.snapshot_sha256
 HAVING min(attempt.fetched_at) < now() - interval '2 hours'
