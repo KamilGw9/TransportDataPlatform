@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-10-09.
+Last updated: 2026-10-11.
 
 Current stage: 5 of the [project plan](project-plan.md), scheduled runs.
 Airflow loads vehicle positions and trip updates and rebuilds the models every
@@ -99,9 +99,9 @@ complete.
   The arrival is the window between the two observations, with the distance of
   the vehicle from the stop at the end of it. Of 18,471 arrivals by 2026-10-06,
   the window had a median of 30 s, and 99.7% of those with a known position were
-  within 50 m of the stop (median 10 m). `core.trip_stop_time` gives the
-  scheduled times of each trip seen in realtime data, and
-  `core.stop_arrival_delay` the delay of each arrival as a range.
+  within 50 m of the stop (median 10 m). `core.stop_arrival_delay` gives the
+  delay of each arrival as a range, against the scheduled time from the stop
+  times of the trip's schedule version.
 - Punctuality: `marts.route_punctuality` counts early, on-time and late arrivals
   per route, service date and hour of the service day. It uses the first arrival
   at each stop of a trip, within 50 m of the stop and with a window of at most
@@ -109,18 +109,26 @@ complete.
   the middle of its delay range. Of 18,233 such arrivals by 2026-10-06, 59.3%
   were on time, 40.4% late and 0.3% early.
 - Models in `core` and `marts` are built by dbt from `transform/`
-  (`make dbt-build`), with unit tests of each model and uniqueness tests on the
-  matching and prediction outputs. The two position models and both marts are
-  tables rebuilt from scratch; migrations cover only `metadata` and `staging`
-  ([ADR 004](adr/004-dbt-core-models.md)). The two prediction models are
-  incremental and recompute only the hours of scheduled arrivals touched by new
-  snapshots or arrivals ([ADR 006](adr/006-bounded-staging-incremental-models.md)).
-  The prediction periods follow the staging window, while
-  `core.arrival_prediction` keeps hours that have left it frozen and ignores
-  `--full-refresh`:
-  with a few new snapshots, the prediction periods took 18 s against 169 s for a
-  full build, and the result matched a full build row for row. A full
-  `make dbt-build` took 84 s. CI builds the models after the migrations.
+  (`make dbt-build`), with unit tests of each model, including a later build of
+  each incremental one, and uniqueness tests on the matching and prediction
+  outputs; migrations cover only `metadata` and `staging`
+  ([ADR 004](adr/004-dbt-core-models.md)). All models except
+  `marts.prediction_accuracy` are incremental
+  ([ADR 006](adr/006-bounded-staging-incremental-models.md)). Matching and
+  service dates add the positions of new snapshots; arrivals, trusted arrivals
+  and route punctuality recompute the service dates with new positions; the
+  two prediction models recompute the hours of scheduled arrivals touched by
+  new snapshots or arrivals. A position snapshot is matched only once every
+  schedule version archived before it has loaded, and a data test fails the
+  build if one has waited for more than 2 hours. The prediction periods follow
+  the staging window, while `core.arrival_prediction` keeps hours that have
+  left it frozen and ignores `--full-refresh`; the position models can be
+  rebuilt from staging with it. With a few new snapshots, the prediction
+  periods took 18 s against 169 s for a full build. On 2026-10-11, with half an
+  hour of new data, the models from matching to route punctuality and the
+  arrival predictions took 4.5 s in all, against 130 s as full rebuilds. Each
+  of them matched a full build row for row, and the arrival predictions matched
+  the previous query. CI builds the models after the migrations.
 - Scheduled runs: `make airflow` starts Airflow 3 in Compose with the
   LocalExecutor, keeping its metadata in a separate `airflow` database on the
   same PostgreSQL ([ADR 005](adr/005-airflow-scheduling.md)). The
@@ -128,7 +136,8 @@ complete.
   load-trip-updates` side by side and then `dbt build` every 30 minutes, without
   overlapping runs; dbt builds even if a snapshot failed to load, and the run is
   then marked as failed. After a successful build, the run prunes TripUpdates
-  staging; this task has not run in Airflow yet. A run on 2026-10-08 loaded both
+  staging; its first run in Airflow, on 2026-10-11, deleted 1,005 snapshots
+  older than the window. A run on 2026-10-08 loaded both
   feeds in 3 s and built and tested the models, including the incremental
   prediction models, in 107 s. The `check_freshness` DAG runs `mobility
   check-freshness` every 5 minutes, so a stale feed shows up as a failed run in
@@ -168,12 +177,16 @@ complete.
   when there is one; none has appeared so far.
 - A snapshot that cannot be loaded is retried, and recorded as failed again, on
   every run of `refresh_models`, which then fails. This has not happened yet.
-- The position models in `core` are rebuilt from scratch on every build and
-  include only positions loaded before it, so they lag the collected data by up
-  to 30 minutes plus the length of a run. As views, they took 11 s
-  per query over 194,000 positions and 15 s over the 181,000 matched ones; a day
-  of continuous collection adds about 230,000. ServiceAlerts are archived but
-  not decoded.
+- The position models include only positions loaded before a build, so they
+  lag the collected data by up to 30 minutes plus the length of a run. A
+  schedule version that fails to load holds back new positions until it loads
+  or a newer version replaces it. Each build still compares every staged
+  position snapshot with the matched ones, and the uniqueness test reads every
+  match; both grow with history, but this has not been measured beyond 530,000
+  positions. ServiceAlerts are archived but not decoded.
+- The incremental models assume one dbt build at a time: two builds at once
+  would add the same positions twice. Airflow runs one at a time, but a manual
+  `make dbt-build` during a run is not prevented.
 - Staging keeps every stop time update of every TripUpdates snapshot, although
   only 27% of them change between consecutive snapshots. A day of continuous
   collection adds about 7.6 million rows, about 0.9 GB at the measured 124
@@ -183,7 +196,10 @@ complete.
   space of deleted rows but does not return it to the disk. The first load of
   a backlog of several days can exceed the 10-minute task limit in Airflow.
 - Every build of the prediction periods reads all of staging to select the
-  hours to recompute, about 10 s for 15 million rows. A period that ends at the
+  hours to recompute, about 10 s for 15 million rows. With memory limited as
+  on a 2 GB host, the prediction periods took 77 s of a 117 s build on
+  2026-10-11, with 15.6 million rows in staging; at the expected 7 GB of
+  staging this has not been measured. A period that ends at the
   newest snapshot is taken to last 2 minutes past it until its hour is
   recomputed. A mistake in choosing the hours would leave stale rows; in the
   prediction periods `--full-refresh` repairs them, in the arrival predictions

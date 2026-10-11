@@ -102,9 +102,9 @@ Four options were considered:
 Build time of the prediction periods and the size of staging depend on the
 window and the daily volume, not on how long collection has run. The steady
 size of TripUpdates staging is about 7 GB at the current volume. Models that
-keep their full history still grow with it: `core.arrival_prediction` checks
-every trusted arrival against all of its rows, and `marts.prediction_accuracy`
-is rebuilt from all of its history. New vehicle positions are not matched while
+keep their full history grow with it where they are read whole:
+`marts.prediction_accuracy` is rebuilt from all of `core.arrival_prediction`
+on every build. New vehicle positions are not matched while
 a schedule version waits to be loaded, so a failed schedule load also stops
 the position models from advancing until it succeeds.
 

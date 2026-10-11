@@ -226,9 +226,11 @@ timestamp goes to `staging.vehicle_position_snapshot` and one row per vehicle to
 others still load. Running the command again loads only new snapshots. Fields
 that the feed leaves unset are stored as `NULL`, not as protobuf defaults.
 
-The position models in `core` are tables, so run `make dbt-build` after loading
-to include the new positions. With `make airflow` running, both steps run every
-30 minutes. `core.vehicle_position_match` joins each position
+The position models in `core` are incremental tables, so run `make dbt-build`
+after loading to add the new positions. With `make airflow` running, both steps
+run every 30 minutes. After a change to their SQL, rebuild them from staging
+with `dbt build --full-refresh --select vehicle_position_match+` in
+`transform/`. `core.vehicle_position_match` joins each position
 to the schedule version that was the latest archived one when the snapshot was
 first downloaded. Share of positions whose trip was found, per hour:
 
