@@ -7,8 +7,6 @@ unit_tests:
       macros:
         is_incremental: false
     given:
-      - input: ref('stop_arrival')
-        rows: []
       - input: ref('trusted_stop_arrival')
         rows:
           - {schedule_sha256: v1, trip_id: day, service_date: "2026-10-05", stop_sequence: 2, scheduled_arrival: "2026-10-05 08:00:00+00", min_delay_seconds: 30, max_delay_seconds: 60}
@@ -33,7 +31,7 @@ unit_tests:
   - name: later_build_recomputes_service_dates_with_recomputed_arrivals
     model: route_punctuality
     description: >
-      The previous build ended at 12:00. Arrivals on 2026-10-05 were
+      The previous build ended at 12:00. Trusted arrivals on 2026-10-05 were
       recomputed after it, those on 2026-10-04 were not.
     overrides:
       macros:
@@ -42,14 +40,10 @@ unit_tests:
       - input: this
         rows:
           - {route_short_name: "143", service_date: "2026-10-04", built_at: "2026-10-05 12:00:00+00"}
-      - input: ref('stop_arrival')
-        rows:
-          - {service_date: "2026-10-04", built_at: "2026-10-04 23:00:00+00"}
-          - {service_date: "2026-10-05", built_at: "2026-10-05 12:30:00+00"}
       - input: ref('trusted_stop_arrival')
         rows:
-          - {schedule_sha256: v1, trip_id: day, service_date: "2026-10-04", stop_sequence: 2, scheduled_arrival: "2026-10-04 08:00:00+00", min_delay_seconds: 30, max_delay_seconds: 60}
-          - {schedule_sha256: v1, trip_id: day, service_date: "2026-10-05", stop_sequence: 2, scheduled_arrival: "2026-10-05 08:00:00+00", min_delay_seconds: 30, max_delay_seconds: 60}
+          - {schedule_sha256: v1, trip_id: day, service_date: "2026-10-04", stop_sequence: 2, scheduled_arrival: "2026-10-04 08:00:00+00", min_delay_seconds: 30, max_delay_seconds: 60, built_at: "2026-10-04 23:00:00+00"}
+          - {schedule_sha256: v1, trip_id: day, service_date: "2026-10-05", stop_sequence: 2, scheduled_arrival: "2026-10-05 08:00:00+00", min_delay_seconds: 30, max_delay_seconds: 60, built_at: "2026-10-05 12:30:00+00"}
       - input: source('staging', 'schedule_trip')
         rows:
           - {schedule_sha256: v1, trip_id: day, route_id: r143}

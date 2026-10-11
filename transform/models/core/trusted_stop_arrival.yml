@@ -1,7 +1,12 @@
 unit_tests:
   - name: trusted_arrival_is_first_close_and_short
     model: trusted_stop_arrival
+    overrides:
+      macros:
+        is_incremental: false
     given:
+      - input: ref('stop_arrival')
+        rows: []
       - input: ref('stop_arrival_delay')
         rows:
           - {trip_id: t1, service_date: "2026-10-05", vehicle_id: "601", stop_sequence: 2, arrived_after: "2026-10-05 08:00:30+00", arrived_by: "2026-10-05 08:01:00+00", distance_to_stop_m: 10}
@@ -19,3 +24,27 @@ unit_tests:
         - {service_date: "2026-10-05", vehicle_id: "601", stop_sequence: 2}
         - {service_date: "2026-10-05", vehicle_id: "601", stop_sequence: 3}
         - {service_date: "2026-10-06", vehicle_id: "601", stop_sequence: 3}
+
+  - name: later_build_recomputes_service_dates_with_recomputed_arrivals
+    model: trusted_stop_arrival
+    description: >
+      The previous build ended at 12:00. Arrivals on 2026-10-05 were
+      recomputed after it, those on 2026-10-04 were not.
+    overrides:
+      macros:
+        is_incremental: true
+    given:
+      - input: this
+        rows:
+          - {service_date: "2026-10-04", built_at: "2026-10-05 12:00:00+00"}
+      - input: ref('stop_arrival')
+        rows:
+          - {service_date: "2026-10-04", built_at: "2026-10-04 23:00:00+00"}
+          - {service_date: "2026-10-05", built_at: "2026-10-05 12:30:00+00"}
+      - input: ref('stop_arrival_delay')
+        rows:
+          - {trip_id: t1, service_date: "2026-10-04", vehicle_id: "601", stop_sequence: 2, arrived_after: "2026-10-04 08:00:30+00", arrived_by: "2026-10-04 08:01:00+00", distance_to_stop_m: 10}
+          - {trip_id: t1, service_date: "2026-10-05", vehicle_id: "601", stop_sequence: 2, arrived_after: "2026-10-05 08:00:30+00", arrived_by: "2026-10-05 08:01:00+00", distance_to_stop_m: 10}
+    expect:
+      rows:
+        - {service_date: "2026-10-05", stop_sequence: 2}

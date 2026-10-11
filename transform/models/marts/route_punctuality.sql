@@ -5,8 +5,6 @@
     indexes=[{'columns': ['built_at']}],
 ) }}
 
--- depends_on: {{ ref('stop_arrival') }}
-
 -- Punctuality of each route by service date and hour of the scheduled arrival.
 -- An arrival is on time from 1 minute early to 3 minutes late, judged by the
 -- middle of its delay range. A build recomputes the service dates whose
@@ -18,7 +16,7 @@ WITH
 -- which took 105 s on 2026-10-11.
 changed_date AS MATERIALIZED (
     SELECT DISTINCT service_date
-    FROM {{ ref('stop_arrival') }}
+    FROM {{ ref('trusted_stop_arrival') }}
     WHERE built_at > (SELECT coalesce(max(built_at), '-infinity') FROM {{ this }})
 ),
 {%- endif %}
