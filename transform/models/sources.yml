@@ -24,3 +24,4 @@ sources:
               - not_null:
                   config:
                     severity: warn
+      - name: vehicle_position_snapshot
