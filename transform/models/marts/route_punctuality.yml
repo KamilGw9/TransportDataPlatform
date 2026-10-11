@@ -37,9 +37,10 @@ unit_tests:
       macros:
         is_incremental: true
     given:
+      # As SQL: on a new database the table does not exist yet to take columns from.
       - input: this
-        rows:
-          - {route_short_name: "143", service_date: "2026-10-04", built_at: "2026-10-05 12:00:00+00"}
+        format: sql
+        rows: SELECT date '2026-10-04' AS service_date, timestamptz '2026-10-05 12:00:00+00' AS built_at
       - input: ref('trusted_stop_arrival')
         rows:
           - {schedule_sha256: v1, trip_id: day, service_date: "2026-10-04", stop_sequence: 2, scheduled_arrival: "2026-10-04 08:00:00+00", min_delay_seconds: 30, max_delay_seconds: 60, built_at: "2026-10-04 23:00:00+00"}

@@ -80,9 +80,10 @@ unit_tests:
       macros:
         is_incremental: true
     given:
+      # As SQL: on a new database the table does not exist yet to take columns from.
       - input: this
-        rows:
-          - {snapshot_sha256: s1, entity_id: vehicle_401}
+        format: sql
+        rows: SELECT 's1'::text AS snapshot_sha256
       - input: source('staging', 'vehicle_position_snapshot')
         rows:
           - {snapshot_sha256: s1}

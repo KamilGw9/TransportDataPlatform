@@ -42,9 +42,10 @@ unit_tests:
       macros:
         is_incremental: true
     given:
+      # As SQL: on a new database the table does not exist yet to take columns from.
       - input: this
-        rows:
-          - {service_date: "2026-10-04", built_at: "2026-10-05 12:00:00+00"}
+        format: sql
+        rows: SELECT date '2026-10-04' AS service_date, timestamptz '2026-10-05 12:00:00+00' AS built_at
       - input: ref('vehicle_position_service_date')
         rows:
           - {snapshot_sha256: s0, entity_id: e1, schedule_sha256: v1, trip_id: t0, service_date: "2026-10-04", built_at: "2026-10-04 11:00:00+00"}

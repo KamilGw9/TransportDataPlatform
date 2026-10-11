@@ -46,9 +46,10 @@ unit_tests:
       macros:
         is_incremental: true
     given:
+      # As SQL: on a new database the table does not exist yet to take columns from.
       - input: this
-        rows:
-          - {snapshot_sha256: matched_snapshot, entity_id: vehicle_401}
+        format: sql
+        rows: SELECT 'matched_snapshot'::text AS snapshot_sha256
       - input: source('metadata', 'fetch_attempt')
         rows:
           - {source_id: krakow_ztp_m, status: stored, sha256: schedule, fetched_at: "2026-10-01 00:00:00+00"}
@@ -74,8 +75,10 @@ unit_tests:
       macros:
         is_incremental: true
     given:
+      # As SQL: on a new database the table does not exist yet to take columns from.
       - input: this
-        rows: []
+        format: sql
+        rows: SELECT 'none'::text AS snapshot_sha256 WHERE false
       - input: source('metadata', 'fetch_attempt')
         rows:
           - {source_id: krakow_ztp_m, status: stored, sha256: old_schedule, fetched_at: "2026-10-01 00:00:00+00"}
@@ -105,8 +108,10 @@ unit_tests:
       macros:
         is_incremental: true
     given:
+      # As SQL: on a new database the table does not exist yet to take columns from.
       - input: this
-        rows: []
+        format: sql
+        rows: SELECT 'none'::text AS snapshot_sha256 WHERE false
       - input: source('metadata', 'fetch_attempt')
         rows:
           - {source_id: krakow_ztp_m, status: stored, sha256: old_schedule, fetched_at: "2026-10-01 00:00:00+00"}
