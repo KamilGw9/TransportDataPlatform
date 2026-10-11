@@ -10,6 +10,9 @@ models:
 unit_tests:
   - name: position_is_matched_to_schedule_archived_before_snapshot
     model: vehicle_position_match
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: source('metadata', 'fetch_attempt')
         rows:
@@ -33,3 +36,125 @@ unit_tests:
       rows:
         - {snapshot_sha256: early_snapshot, schedule_sha256: old_schedule, trip_found: false}
         - {snapshot_sha256: late_snapshot, schedule_sha256: new_schedule, trip_found: true}
+
+  - name: later_build_adds_only_snapshots_not_matched_yet
+    model: vehicle_position_match
+    description: >
+      late_snapshot was downloaded before matched_snapshot but loaded into
+      staging after the previous build.
+    overrides:
+      macros:
+        is_incremental: true
+    given:
+      # As SQL: on a new database the table does not exist yet to take columns from.
+      - input: this
+        format: sql
+        rows: SELECT 'matched_snapshot'::text AS snapshot_sha256
+      - input: source('metadata', 'fetch_attempt')
+        rows:
+          - {source_id: krakow_ztp_m, status: stored, sha256: schedule, fetched_at: "2026-10-01 00:00:00+00"}
+          - {source_id: krakow_ztp_m_vehicle_positions, status: stored, sha256: late_snapshot, fetched_at: "2026-10-03 10:00:00+00"}
+          - {source_id: krakow_ztp_m_vehicle_positions, status: stored, sha256: matched_snapshot, fetched_at: "2026-10-03 10:01:00+00"}
+      - input: source('metadata', 'schedule_load')
+        rows:
+          - {schedule_sha256: schedule, status: loaded}
+      - input: source('staging', 'schedule_trip')
+        rows:
+          - {schedule_sha256: schedule, trip_id: "1684_1", route_id: "147"}
+      - input: source('staging', 'vehicle_position')
+        rows:
+          - {snapshot_sha256: late_snapshot, entity_id: vehicle_401, trip_id: "1684_1", route_id: "147"}
+          - {snapshot_sha256: matched_snapshot, entity_id: vehicle_401, trip_id: "1684_1", route_id: "147"}
+    expect:
+      rows:
+        - {snapshot_sha256: late_snapshot, schedule_sha256: schedule, trip_found: true}
+
+  - name: snapshot_waits_for_schedule_archived_before_it_to_load
+    model: vehicle_position_match
+    overrides:
+      macros:
+        is_incremental: true
+    given:
+      # As SQL: on a new database the table does not exist yet to take columns from.
+      - input: this
+        format: sql
+        rows: SELECT 'none'::text AS snapshot_sha256 WHERE false
+      - input: source('metadata', 'fetch_attempt')
+        rows:
+          - {source_id: krakow_ztp_m, status: stored, sha256: old_schedule, fetched_at: "2026-10-01 00:00:00+00"}
+          - {source_id: krakow_ztp_m, status: stored, sha256: new_schedule, fetched_at: "2026-10-03 09:44:00+00"}
+          - {source_id: krakow_ztp_m_vehicle_positions, status: stored, sha256: early_snapshot, fetched_at: "2026-10-03 09:00:00+00"}
+          - {source_id: krakow_ztp_m_vehicle_positions, status: stored, sha256: late_snapshot, fetched_at: "2026-10-03 10:00:00+00"}
+      - input: source('metadata', 'schedule_load')
+        rows:
+          - {schedule_sha256: old_schedule, status: loaded}
+      - input: source('staging', 'schedule_trip')
+        rows:
+          - {schedule_sha256: old_schedule, trip_id: "1684_1", route_id: "147"}
+      - input: source('staging', 'vehicle_position')
+        rows:
+          - {snapshot_sha256: early_snapshot, entity_id: vehicle_401, trip_id: "1684_1", route_id: "147"}
+          - {snapshot_sha256: late_snapshot, entity_id: vehicle_401, trip_id: "1684_1", route_id: "147"}
+    expect:
+      rows:
+        - {snapshot_sha256: early_snapshot, schedule_sha256: old_schedule}
+
+  - name: snapshot_waits_while_no_schedule_version_is_loaded
+    model: vehicle_position_match
+    overrides:
+      macros:
+        is_incremental: true
+    given:
+      # As SQL: on a new database the table does not exist yet to take columns from.
+      - input: this
+        format: sql
+        rows: SELECT 'none'::text AS snapshot_sha256 WHERE false
+      - input: source('metadata', 'fetch_attempt')
+        rows:
+          - {source_id: krakow_ztp_m, status: stored, sha256: first_schedule, fetched_at: "2026-10-01 00:00:00+00"}
+          - {source_id: krakow_ztp_m_vehicle_positions, status: stored, sha256: waiting_snapshot, fetched_at: "2026-10-01 00:01:00+00"}
+      - input: source('metadata', 'schedule_load')
+        format: sql
+        rows: SELECT 'none'::text AS schedule_sha256, 'loaded'::text AS status WHERE false
+      - input: source('staging', 'schedule_trip')
+        format: sql
+        rows: SELECT 'none'::text AS schedule_sha256, 'none'::text AS trip_id, 'none'::text AS route_id WHERE false
+      - input: source('staging', 'vehicle_position')
+        rows:
+          - {snapshot_sha256: waiting_snapshot, entity_id: vehicle_401, trip_id: "1684_1", route_id: "147"}
+    expect:
+      rows: []
+
+  - name: snapshot_gets_version_before_one_replaced_before_it_loaded
+    model: vehicle_position_match
+    description: >
+      broken_schedule failed to load and was replaced by new_schedule an hour
+      later, so it will never load.
+    overrides:
+      macros:
+        is_incremental: true
+    given:
+      # As SQL: on a new database the table does not exist yet to take columns from.
+      - input: this
+        format: sql
+        rows: SELECT 'none'::text AS snapshot_sha256 WHERE false
+      - input: source('metadata', 'fetch_attempt')
+        rows:
+          - {source_id: krakow_ztp_m, status: stored, sha256: old_schedule, fetched_at: "2026-10-01 00:00:00+00"}
+          - {source_id: krakow_ztp_m, status: stored, sha256: broken_schedule, fetched_at: "2026-10-03 09:44:00+00"}
+          - {source_id: krakow_ztp_m, status: stored, sha256: new_schedule, fetched_at: "2026-10-03 10:44:00+00"}
+          - {source_id: krakow_ztp_m_vehicle_positions, status: stored, sha256: waiting_snapshot, fetched_at: "2026-10-03 10:00:00+00"}
+      - input: source('metadata', 'schedule_load')
+        rows:
+          - {schedule_sha256: old_schedule, status: loaded}
+          - {schedule_sha256: broken_schedule, status: failed}
+          - {schedule_sha256: new_schedule, status: loaded}
+      - input: source('staging', 'schedule_trip')
+        rows:
+          - {schedule_sha256: old_schedule, trip_id: "1684_1", route_id: "147"}
+      - input: source('staging', 'vehicle_position')
+        rows:
+          - {snapshot_sha256: waiting_snapshot, entity_id: vehicle_401, trip_id: "1684_1", route_id: "147"}
+    expect:
+      rows:
+        - {snapshot_sha256: waiting_snapshot, schedule_sha256: old_schedule, trip_found: true}

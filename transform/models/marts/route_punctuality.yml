@@ -3,6 +3,9 @@ unit_tests:
     model: route_punctuality
     description: >
       All on 2026-10-05; Kraków is UTC+2, so 08:00 UTC is service hour 10.
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: ref('trusted_stop_arrival')
         rows:
@@ -24,3 +27,30 @@ unit_tests:
       rows:
         - {route_short_name: "143", service_date: "2026-10-05", service_hour: 10, arrivals: 4, early_arrivals: 1, on_time_arrivals: 2, late_arrivals: 1, median_delay_seconds: 30}
         - {route_short_name: "601", service_date: "2026-10-05", service_hour: 24, arrivals: 1, early_arrivals: 0, on_time_arrivals: 1, late_arrivals: 0, median_delay_seconds: 15}
+
+  - name: later_build_recomputes_service_dates_with_recomputed_arrivals
+    model: route_punctuality
+    description: >
+      The previous build ended at 12:00. Trusted arrivals on 2026-10-05 were
+      recomputed after it, those on 2026-10-04 were not.
+    overrides:
+      macros:
+        is_incremental: true
+    given:
+      # As SQL: on a new database the table does not exist yet to take columns from.
+      - input: this
+        format: sql
+        rows: SELECT date '2026-10-04' AS service_date, timestamptz '2026-10-05 12:00:00+00' AS built_at
+      - input: ref('trusted_stop_arrival')
+        rows:
+          - {schedule_sha256: v1, trip_id: day, service_date: "2026-10-04", stop_sequence: 2, scheduled_arrival: "2026-10-04 08:00:00+00", min_delay_seconds: 30, max_delay_seconds: 60, built_at: "2026-10-04 23:00:00+00"}
+          - {schedule_sha256: v1, trip_id: day, service_date: "2026-10-05", stop_sequence: 2, scheduled_arrival: "2026-10-05 08:00:00+00", min_delay_seconds: 30, max_delay_seconds: 60, built_at: "2026-10-05 12:30:00+00"}
+      - input: source('staging', 'schedule_trip')
+        rows:
+          - {schedule_sha256: v1, trip_id: day, route_id: r143}
+      - input: source('staging', 'schedule_route')
+        rows:
+          - {schedule_sha256: v1, route_id: r143, route_short_name: "143"}
+    expect:
+      rows:
+        - {route_short_name: "143", service_date: "2026-10-05", service_hour: 10, arrivals: 1}

@@ -72,18 +72,41 @@ Four options were considered:
   predictions. On 2026-10-09, a snapshot predicted arrivals scheduled from 49
   minutes before to 3 hours 5 minutes after it was published, so the range
   checked is 4 hours before to 2 hours after the hour.
-- The rule applies to TripUpdates first. Vehicle positions, which grow about
-  30 times more slowly in rows, stay on full rebuilds until a measured build
-  time requires the same change.
+- The rule applied to TripUpdates first. Vehicle positions, which grow about
+  30 times more slowly in rows, followed on 2026-10-11. With memory limited
+  as on a 2 GB host, matching 527,000 positions to the schedule took 113 s of
+  a 188 s build, and at about 230,000 positions a day a linear estimate put
+  the build past the 10-minute limit within two weeks. Choosing the schedule
+  version per snapshot instead of per position brought matching to 4 s, but
+  the service dates, arrivals and punctuality still read every position on
+  each build.
+- Matching and service dates only add the positions of new snapshots, as
+  neither depends on other positions. Arrivals and punctuality recompute the
+  service dates that new positions touch: an arrival compares consecutive
+  positions of a trip on one service date, and a date holds about 230,000
+  positions, so hours are not needed. Staging keeps every position, so
+  `--full-refresh` still rebuilds these models from staging.
+- New position snapshots are found by comparing staging with the snapshots
+  already in `core.vehicle_position_match`, not by an id, so the order in
+  which snapshots are committed does not matter and the position loader needs
+  no lock.
+- A position snapshot is matched only once every schedule version archived
+  before it has been loaded into staging, and waits until then. A full
+  rebuild corrected a match against an older version on the next build; an
+  incremental model would keep it. A data test fails the build when a
+  snapshot has waited for more than 2 hours, so a failed schedule load shows
+  up as a failed run.
 
 ## Consequences
 
 Build time of the prediction periods and the size of staging depend on the
 window and the daily volume, not on how long collection has run. The steady
 size of TripUpdates staging is about 7 GB at the current volume. Models that
-keep their full history still grow with it: `core.arrival_prediction` checks
-every trusted arrival against all of its rows, and the vehicle position models
-and the marts are rebuilt from all of their history.
+keep their full history grow with it where they are read whole:
+`marts.prediction_accuracy` is rebuilt from all of `core.arrival_prediction`
+on every build. New vehicle positions are not matched while
+a schedule version waits to be loaded, so a failed schedule load also stops
+the position models from advancing until it succeeds.
 
 `dbt build --full-refresh` no longer reproduces the full history: it rebuilds
 the prediction periods from staging and leaves `core.arrival_prediction` as it
