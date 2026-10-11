@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, time, timedelta
 
 from google.protobuf.message import Message
 from google.transit import gtfs_realtime_pb2
@@ -12,6 +12,16 @@ from mobility.gtfs_rt_fields import (
 from mobility.ingestion.archive import describe_error, sha256_hex
 
 SOURCE_ID = "krakow_ztp_m_trip_updates"
+
+# The incremental models find new snapshots by snapshot_id, which is assigned on
+# insert but becomes visible on commit. With two writers, a lower id could be
+# committed after a build has moved past it, so every writer to the TripUpdates
+# staging tables holds this advisory lock until it disconnects (ADR 006).
+STAGING_LOCK_KEY = 6001
+
+
+def lock_staging(conn) -> None:
+    conn.execute("SELECT pg_advisory_lock(%s)", (STAGING_LOCK_KEY,))
 
 
 @dataclass(frozen=True)
@@ -99,6 +109,86 @@ ORDER BY attempt.sha256, attempt.fetched_at
 def pending_snapshots(conn, source_id: str) -> list[tuple[str, str]]:
     """Return the hash and object key of each stored snapshot not yet loaded."""
     return conn.execute(_SELECT_PENDING_SNAPSHOTS, (source_id,)).fetchall()
+
+
+# Staging keeps the TripUpdates of the last 7 whole UTC days; older ones stay in
+# RAW and can be reloaded (ADR 006).
+STAGING_WINDOW_DAYS = 7
+
+
+def staging_window_start(now: datetime) -> datetime:
+    today = now.astimezone(UTC).date()
+    return datetime.combine(today - timedelta(days=STAGING_WINDOW_DAYS), time(), UTC)
+
+
+def built_snapshot_id(conn) -> int | None:
+    """Return the newest snapshot that the prediction periods were built from.
+
+    None before the first build with any predictions, which prunes nothing.
+    """
+    return conn.execute(
+        "SELECT max(last_snapshot_id) FROM core.stop_time_prediction"
+    ).fetchone()[0]
+
+
+_PRUNE_STAGING = [
+    """
+    CREATE TEMPORARY TABLE pruned_snapshot ON COMMIT DROP AS
+    SELECT snapshot_id FROM staging.trip_update_snapshot
+    WHERE feed_timestamp < %(window_start)s
+        AND snapshot_id <= %(built_snapshot_id)s
+    """,
+    """
+    DELETE FROM staging.stop_time_update
+    WHERE snapshot_id IN (SELECT snapshot_id FROM pruned_snapshot)
+    """,
+    """
+    DELETE FROM staging.trip_update
+    WHERE snapshot_id IN (SELECT snapshot_id FROM pruned_snapshot)
+    """,
+    """
+    DELETE FROM staging.trip_update_snapshot
+    WHERE snapshot_id IN (SELECT snapshot_id FROM pruned_snapshot)
+    """,
+]
+
+
+def prune_staging(conn, window_start: datetime, built_snapshot_id: int | None) -> int:
+    """Delete snapshots older than the window and return how many there were.
+
+    A snapshot newer than the last build is kept, so that a reload finished
+    while the models were being built is not deleted before they use it.
+    """
+    params = {"window_start": window_start, "built_snapshot_id": built_snapshot_id}
+    with conn.transaction():
+        for statement in _PRUNE_STAGING:
+            cursor = conn.execute(statement, params)
+    return cursor.rowcount
+
+
+# Stored snapshots missing from staging, mostly because they have left the
+# window. The date of an object key is the UTC date of the download.
+_SELECT_SNAPSHOTS_TO_RELOAD = """
+SELECT DISTINCT ON (attempt.sha256) attempt.sha256, attempt.object_key
+FROM metadata.fetch_attempt AS attempt
+WHERE attempt.source_id = %s
+    AND attempt.status = 'stored'
+    AND attempt.fetched_at >= %s
+    AND attempt.fetched_at < %s
+    AND NOT EXISTS (
+        SELECT 1 FROM staging.trip_update_snapshot AS snapshot
+        WHERE snapshot.snapshot_sha256 = attempt.sha256
+    )
+ORDER BY attempt.sha256, attempt.fetched_at
+"""
+
+
+def snapshots_to_reload(
+    conn, source_id: str, first_date: date, last_date: date
+) -> list[tuple[str, str]]:
+    start = datetime.combine(first_date, time(), UTC)
+    end = datetime.combine(last_date + timedelta(days=1), time(), UTC)
+    return conn.execute(_SELECT_SNAPSHOTS_TO_RELOAD, (source_id, start, end)).fetchall()
 
 
 _INSERT_LOAD = """

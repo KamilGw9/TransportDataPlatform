@@ -2,6 +2,13 @@
     materialized='incremental',
     incremental_strategy='delete+insert',
     unique_key='scheduled_arrival_hour',
+    post_hook="
+        DELETE FROM {{ this }}
+        WHERE scheduled_arrival_hour < (
+            SELECT date_trunc('hour', min(feed_timestamp) - interval '1 hour', 'UTC')
+            FROM {{ source('staging', 'trip_update_snapshot') }}
+        )
+    ",
 ) }}
 
 -- Arrival predictions from TripUpdates, one row per period in which a vehicle
@@ -22,6 +29,14 @@
 -- most periods of the day on every build. A period that ends at the newest
 -- snapshot lasts 2 minutes past it until its hour is recomputed, which may not
 -- happen if no later snapshot predicts that hour.
+--
+-- The periods follow the staging window: the post-hook deletes the hours that
+-- no snapshot left in staging predicts. A snapshot predicts arrivals scheduled
+-- from 49 minutes before to 3 hours 5 minutes after it was published, as
+-- measured on 2026-10-09. An hour is computed only if staging has snapshots
+-- from every UTC date in that range around it, so that an hour at the edge of
+-- the window or of a reload from RAW is not computed from part of its
+-- predictions; it keeps the periods it had, if any.
 WITH snapshot AS (
     SELECT
         snapshot_id,
@@ -56,14 +71,36 @@ hourly_prediction AS NOT MATERIALIZED (
         date_trunc('hour', scheduled_arrival, 'UTC') AS scheduled_arrival_hour
     FROM stop_prediction
 ),
-{%- if is_incremental() %}
-new_hour AS (
+staged_date AS (
+    SELECT DISTINCT (feed_timestamp AT TIME ZONE 'UTC')::date AS feed_date
+    FROM snapshot
+),
+candidate_hour AS (
     SELECT DISTINCT scheduled_arrival_hour
     FROM hourly_prediction
+    {%- if is_incremental() %}
     -- coalesce: a table built from an empty staging is filled from all of it.
     WHERE snapshot_id > (SELECT coalesce(max(last_snapshot_id), 0) FROM {{ this }})
+    {%- endif %}
 ),
-{%- endif %}
+complete_hour AS (
+    SELECT scheduled_arrival_hour
+    FROM candidate_hour
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM generate_series(
+            scheduled_arrival_hour - interval '4 hours',
+            -- Hours still being predicted are recomputed as snapshots come.
+            least(
+                scheduled_arrival_hour + interval '2 hours',
+                (SELECT max(feed_timestamp) FROM snapshot)
+            ),
+            interval '1 hour'
+        ) AS published_at
+        WHERE (published_at AT TIME ZONE 'UTC')::date
+            NOT IN (SELECT feed_date FROM staged_date)
+    )
+),
 prediction AS (
     SELECT
         trip.trip_id,
@@ -82,9 +119,7 @@ prediction AS (
     JOIN {{ source('staging', 'trip_update') }} AS trip
         USING (snapshot_id, entity_index)
     JOIN snapshot USING (snapshot_id)
-    {%- if is_incremental() %}
-    WHERE stop.scheduled_arrival_hour IN (SELECT scheduled_arrival_hour FROM new_hour)
-    {%- endif %}
+    WHERE stop.scheduled_arrival_hour IN (SELECT scheduled_arrival_hour FROM complete_hour)
 ),
 with_previous AS (
     SELECT

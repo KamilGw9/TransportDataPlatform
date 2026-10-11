@@ -6,30 +6,26 @@ Run with the services from make up and the variables from .env loaded:
 """
 
 import io
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import psycopg
 import pytest
 from google.transit import gtfs_realtime_pb2
 from psycopg.errors import CheckViolation, ForeignKeyViolation, UniqueViolation
 
-from mobility.ingestion.archive import sha256_hex
-from mobility.trip_updates import load_snapshot, pending_snapshots
+from mobility.ingestion.archive import connect_postgres, sha256_hex
+from mobility.trip_updates import (
+    STAGING_LOCK_KEY,
+    load_snapshot,
+    lock_staging,
+    pending_snapshots,
+    prune_staging,
+    snapshots_to_reload,
+)
 
 pytestmark = pytest.mark.integration
 
 SNAPSHOT = "a" * 64
-
-
-def insert_load(conn: psycopg.Connection, status: str, error: str | None) -> None:
-    conn.execute(
-        """
-        INSERT INTO metadata.trip_update_load
-            (snapshot_sha256, object_key, started_at, status, error)
-        VALUES (%s, 'raw/gtfs_rt/a.pb', %s, %s, %s)
-        """,
-        (SNAPSHOT, datetime(2026, 10, 3, tzinfo=UTC), status, error),
-    )
 
 
 def insert_snapshot(conn: psycopg.Connection) -> int:
@@ -72,12 +68,11 @@ def insert_stop_time_update(
     )
 
 
-def test_snapshot_is_loaded_at_most_once(conn: psycopg.Connection) -> None:
-    insert_load(conn, "failed", "DecodeError: truncated message")
-    insert_load(conn, "loaded", None)
+def test_snapshot_is_in_staging_at_most_once(conn: psycopg.Connection) -> None:
+    insert_snapshot(conn)
 
     with pytest.raises(UniqueViolation):
-        insert_load(conn, "loaded", None)
+        insert_snapshot(conn)
 
 
 def test_trip_reported_by_two_vehicles_keeps_both_entities(
@@ -200,6 +195,58 @@ def test_pending_snapshots_skip_loaded_and_repeated_ones(
     ]
 
 
+def remove_from_staging(conn: psycopg.Connection, snapshot_sha256: str) -> None:
+    [snapshot_id] = conn.execute(
+        "SELECT snapshot_id FROM staging.trip_update_snapshot"
+        " WHERE snapshot_sha256 = %s",
+        (snapshot_sha256,),
+    ).fetchone()
+    for statement in [
+        "DELETE FROM staging.stop_time_update WHERE snapshot_id = %s",
+        "DELETE FROM staging.trip_update WHERE snapshot_id = %s",
+        "DELETE FROM staging.trip_update_snapshot WHERE snapshot_id = %s",
+    ]:
+        conn.execute(statement, (snapshot_id,))
+
+
+def test_snapshots_to_reload_are_stored_on_the_dates_and_missing_from_staging(
+    conn: psycopg.Connection,
+) -> None:
+    in_staging = snapshot_data([0])
+    insert_stored_attempt(
+        conn, sha256_hex(in_staging), "in.pb", datetime(2026, 10, 3, 8, tzinfo=UTC)
+    )
+    load_snapshot(FakeS3(in_staging), "bucket", conn, sha256_hex(in_staging), "in.pb")
+    insert_stored_attempt(
+        conn, SNAPSHOT, "missing.pb", datetime(2026, 10, 3, 23, 59, tzinfo=UTC)
+    )
+    insert_stored_attempt(
+        conn, "b" * 64, "next_day.pb", datetime(2026, 10, 4, 0, 1, tzinfo=UTC)
+    )
+
+    assert snapshots_to_reload(
+        conn, "test_trip_updates", date(2026, 10, 3), date(2026, 10, 3)
+    ) == [(SNAPSHOT, "missing.pb")]
+
+
+def test_snapshot_removed_from_staging_is_loaded_again(
+    conn: psycopg.Connection,
+) -> None:
+    data = snapshot_data([0, 60])
+    snapshot_sha256 = sha256_hex(data)
+    load_snapshot(FakeS3(data), "bucket", conn, snapshot_sha256, "a.pb")
+    remove_from_staging(conn, snapshot_sha256)
+
+    load = load_snapshot(FakeS3(data), "bucket", conn, snapshot_sha256, "a.pb")
+
+    assert load.status == "loaded"
+    assert conn.execute(
+        "SELECT count(*) FROM metadata.trip_update_load"
+        " WHERE snapshot_sha256 = %s AND status = 'loaded'",
+        (snapshot_sha256,),
+    ).fetchone() == (2,)
+
+
 def test_load_snapshot_rolls_back_snapshot_with_time_but_no_delay(
     conn: psycopg.Connection,
 ) -> None:
@@ -223,3 +270,81 @@ def test_load_snapshot_rolls_back_snapshot_with_time_but_no_delay(
         (snapshot_sha256,),
     ).fetchone()
     assert error == load.error
+
+
+def try_lock_staging(conn: psycopg.Connection) -> bool:
+    return conn.execute(
+        "SELECT pg_try_advisory_lock(%s)", (STAGING_LOCK_KEY,)
+    ).fetchone()[0]
+
+
+def test_staging_lock_is_held_until_the_writer_disconnects() -> None:
+    with connect_postgres() as writer:
+        lock_staging(writer)
+        with connect_postgres() as other:
+            assert not try_lock_staging(other)
+
+    with connect_postgres() as other:
+        assert try_lock_staging(other)
+
+
+def staged_snapshot(conn: psycopg.Connection, feed_timestamp: datetime) -> int:
+    snapshot_id = conn.execute(
+        """
+        INSERT INTO staging.trip_update_snapshot (snapshot_sha256, feed_timestamp)
+        VALUES (md5(random()::text) || md5(random()::text), %s)
+        RETURNING snapshot_id
+        """,
+        (feed_timestamp,),
+    ).fetchone()[0]
+    insert_trip_update(conn, snapshot_id, 0, "867")
+    insert_stop_time_update(conn, snapshot_id, None, None)
+    return snapshot_id
+
+
+def staged_snapshot_ids(conn: psycopg.Connection, snapshot_ids: list[int]) -> list[int]:
+    return [
+        row[0]
+        for row in conn.execute(
+            "SELECT snapshot_id FROM staging.trip_update_snapshot"
+            " WHERE snapshot_id = ANY(%s) ORDER BY snapshot_id",
+            (snapshot_ids,),
+        )
+    ]
+
+
+def test_prune_staging_deletes_built_snapshots_before_the_window(
+    conn: psycopg.Connection,
+) -> None:
+    # Long before the collected data in the local database.
+    window_start = datetime(2001, 10, 2, tzinfo=UTC)
+    old = staged_snapshot(conn, datetime(2001, 10, 1, 23, 59, tzinfo=UTC))
+    in_window = staged_snapshot(conn, datetime(2001, 10, 2, tzinfo=UTC))
+    # Reloaded from RAW after the last build.
+    old_not_built = staged_snapshot(conn, datetime(2001, 10, 1, 12, tzinfo=UTC))
+
+    pruned = prune_staging(conn, window_start, built_snapshot_id=in_window)
+
+    assert pruned == 1
+    assert staged_snapshot_ids(conn, [old, in_window, old_not_built]) == [
+        in_window,
+        old_not_built,
+    ]
+    assert (
+        conn.execute(
+            "SELECT count(*) FROM staging.stop_time_update WHERE snapshot_id = %s",
+            (old,),
+        ).fetchone()[0]
+        == 0
+    )
+
+
+def test_prune_staging_before_the_first_build_keeps_everything(
+    conn: psycopg.Connection,
+) -> None:
+    old = staged_snapshot(conn, datetime(2001, 10, 1, tzinfo=UTC))
+
+    pruned = prune_staging(conn, datetime(2001, 10, 2, tzinfo=UTC), None)
+
+    assert pruned == 0
+    assert staged_snapshot_ids(conn, [old]) == [old]

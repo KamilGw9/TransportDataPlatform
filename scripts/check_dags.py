@@ -16,7 +16,8 @@ def refresh_run_state(failing_load: str | None) -> str:
     dag = bag.get_dag("refresh_models")
     for load in ["load_vehicle_positions", "load_trip_updates"]:
         dag.get_task(load).bash_command = "exit 1" if load == failing_load else "true"
-    dag.get_task("dbt_build").bash_command = "true"
+    for task in ["dbt_build", "prune_trip_updates"]:
+        dag.get_task(task).bash_command = "true"
     return dag.test().state
 
 

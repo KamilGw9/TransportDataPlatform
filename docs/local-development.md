@@ -203,7 +203,9 @@ Two DAGs start unpaused:
 - `refresh_models` runs `mobility load-vehicle-positions` and
   `mobility load-trip-updates` side by side and then `dbt build` every 30
   minutes, one run at a time. dbt builds even when a load task fails, because
-  each snapshot is committed separately.
+  each snapshot is committed separately. After a successful build,
+  `mobility prune-trip-updates` deletes trip updates older than the staging
+  window.
 - `check_freshness` runs `mobility check-freshness` every 5 minutes and fails
   when a feed is stale.
 
@@ -301,8 +303,10 @@ prediction in force 1, 3, 5, 10 and 15 minutes before each arrival in
 the schedule. Both core models are incremental
 ([ADR 006](adr/006-bounded-staging-incremental-models.md)): a normal build
 recomputes only the hours of scheduled arrivals that new snapshots or arrivals
-touch. After a change to their SQL, rebuild them from staging with
-`dbt build --full-refresh --select stop_time_prediction+` in `transform/`.
+touch. After a change to the SQL of the prediction periods, rebuild them from
+staging with `dbt build --full-refresh --select stop_time_prediction+` in
+`transform/`; `core.arrival_prediction` ignores `--full-refresh` and keeps the
+predictions of days no longer in staging.
 Share of predictions within 1 minute of the arrival, with the schedule as a
 baseline:
 
@@ -316,6 +320,23 @@ FROM marts.prediction_accuracy
 GROUP BY 1
 ORDER BY 1;
 ```
+
+Staging keeps the trip updates of the last 7 whole UTC days.
+`mobility prune-trip-updates` deletes older snapshots, but only those that the
+prediction periods have been built from. To bring older days back, for example
+after a change to the models:
+
+```bash
+uv run mobility reload-trip-updates --from 2026-10-01 --to 2026-10-03
+make dbt-build
+```
+
+The command loads the snapshots downloaded on those UTC dates that are missing
+from staging, and the build recomputes their hours; the next pruning deletes
+them again. Reload whole days next to each other: an hour less than 4 hours
+from a date missing from staging is not recomputed. The loader, the reload and
+the pruning take one advisory lock, so a reload started during a load waits for
+it.
 
 ## Check feed freshness
 

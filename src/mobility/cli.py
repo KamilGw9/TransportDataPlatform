@@ -4,7 +4,7 @@ import os
 import signal
 import threading
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from importlib.metadata import version
 
 from mobility import schedule, trip_updates, vehicle_positions
@@ -118,23 +118,48 @@ def load_vehicle_positions(client, bucket: str) -> bool:
     return failed == 0
 
 
-def load_trip_updates(client, bucket: str) -> bool:
-    with connect_postgres() as conn:
-        snapshots = trip_updates.pending_snapshots(conn, trip_updates.SOURCE_ID)
-        failed = 0
-        for snapshot_sha256, object_key in snapshots:
-            load = trip_updates.load_snapshot(
-                client, bucket, conn, snapshot_sha256, object_key
-            )
-            if load.status == "failed":
-                logger.error("%s: load failed: %s", object_key, load.error)
-                failed += 1
+def load_trip_update_snapshots(
+    client, bucket: str, conn, snapshots: list[tuple[str, str]]
+) -> bool:
+    failed = 0
+    for snapshot_sha256, object_key in snapshots:
+        load = trip_updates.load_snapshot(
+            client, bucket, conn, snapshot_sha256, object_key
+        )
+        if load.status == "failed":
+            logger.error("%s: load failed: %s", object_key, load.error)
+            failed += 1
     logger.info(
         "Loaded %d trip update snapshots, %d failed",
         len(snapshots) - failed,
         failed,
     )
     return failed == 0
+
+
+def load_trip_updates(client, bucket: str) -> bool:
+    with connect_postgres() as conn:
+        trip_updates.lock_staging(conn)
+        snapshots = trip_updates.pending_snapshots(conn, trip_updates.SOURCE_ID)
+        return load_trip_update_snapshots(client, bucket, conn, snapshots)
+
+
+def reload_trip_updates(client, bucket: str, first_date: date, last_date: date) -> bool:
+    with connect_postgres() as conn:
+        trip_updates.lock_staging(conn)
+        snapshots = trip_updates.snapshots_to_reload(
+            conn, trip_updates.SOURCE_ID, first_date, last_date
+        )
+        return load_trip_update_snapshots(client, bucket, conn, snapshots)
+
+
+def prune_trip_updates() -> None:
+    with connect_postgres() as conn:
+        trip_updates.lock_staging(conn)
+        built_snapshot_id = trip_updates.built_snapshot_id(conn)
+        window_start = trip_updates.staging_window_start(datetime.now(UTC))
+        pruned = trip_updates.prune_staging(conn, window_start, built_snapshot_id)
+    logger.info("Pruned %d trip update snapshots before %s", pruned, window_start)
 
 
 def refresh_schedule(client, bucket: str) -> bool:
@@ -209,10 +234,34 @@ def main(argv: list[str] | None = None) -> int:
         help="Load archived Mobilis trip updates not yet in staging tables",
     )
     commands.add_parser(
+        "prune-trip-updates",
+        help="Delete trip updates older than 7 days from staging after a build",
+    )
+    reload_parser = commands.add_parser(
+        "reload-trip-updates",
+        help="Reload archived Mobilis trip updates of UTC dates missing from staging",
+    )
+    reload_parser.add_argument(
+        "--from",
+        dest="first_date",
+        type=date.fromisoformat,
+        required=True,
+        help="First UTC date of download, as YYYY-MM-DD",
+    )
+    reload_parser.add_argument(
+        "--to",
+        dest="last_date",
+        type=date.fromisoformat,
+        required=True,
+        help="Last UTC date of download, as YYYY-MM-DD",
+    )
+    commands.add_parser(
         "check-freshness",
         help="Exit with 1 if a Mobilis GTFS-RT feed has not changed recently",
     )
     args = parser.parse_args(argv)
+    if args.command == "reload-trip-updates" and args.last_date < args.first_date:
+        parser.error("--to must not be earlier than --from")
     if args.command is None:
         parser.print_help()
         return 0
@@ -226,6 +275,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "check-freshness":
         with connect_postgres() as conn:
             return 0 if check_freshness(conn) else 1
+    if args.command == "prune-trip-updates":
+        prune_trip_updates()
+        return 0
 
     client = make_s3_client()
     bucket = os.environ.get("S3_BUCKET", "mobility")
@@ -243,6 +295,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if load_vehicle_positions(client, bucket) else 1
     if args.command == "load-trip-updates":
         return 0 if load_trip_updates(client, bucket) else 1
+    if args.command == "reload-trip-updates":
+        ok = reload_trip_updates(client, bucket, args.first_date, args.last_date)
+        return 0 if ok else 1
     if args.command == "collect-schedule":
         collect_schedule(client, bucket, args.interval)
         return 0

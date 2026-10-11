@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-10-08.
+Last updated: 2026-10-09.
 
 Current stage: 5 of the [project plan](project-plan.md), scheduled runs.
 Airflow loads vehicle positions and trip updates and rebuilds the models every
@@ -64,6 +64,15 @@ complete.
   trips are keyed by their position in the message. In the samples, Mobilis
   sent only `SCHEDULED` trips and stops, always with both the predicted time
   and the delay.
+- TripUpdates staging window: `mobility prune-trip-updates` deletes snapshots
+  older than 7 whole UTC days, once the prediction periods have been built
+  from them, and `mobility reload-trip-updates` loads the snapshots of given
+  UTC dates back from RAW ([ADR 006](adr/006-bounded-staging-incremental-models.md)).
+  Both take the advisory lock that the loader holds. On 2026-10-09, staging was
+  pruned to 2026-10-04 and 2026-10-01 to 2026-10-03 were reloaded: 1,016
+  snapshots deleted in 19 s and reloaded in 68 s. After each step and a build,
+  the arrival predictions of every day were identical to those before, and
+  after the reload the prediction periods were too.
 - Prediction accuracy: `core.stop_time_prediction` merges the predictions that
   stayed the same in consecutive snapshots into periods, 4.9 million of them
   from 15.7 million stop time updates. The predicted time minus the delay
@@ -105,24 +114,28 @@ complete.
   tables rebuilt from scratch; migrations cover only `metadata` and `staging`
   ([ADR 004](adr/004-dbt-core-models.md)). The two prediction models are
   incremental and recompute only the hours of scheduled arrivals touched by new
-  snapshots or arrivals ([ADR 006](adr/006-bounded-staging-incremental-models.md)):
+  snapshots or arrivals ([ADR 006](adr/006-bounded-staging-incremental-models.md)).
+  The prediction periods follow the staging window, while
+  `core.arrival_prediction` keeps hours that have left it frozen and ignores
+  `--full-refresh`:
   with a few new snapshots, the prediction periods took 18 s against 169 s for a
   full build, and the result matched a full build row for row. A full
   `make dbt-build` took 84 s. CI builds the models after the migrations.
 - Scheduled runs: `make airflow` starts Airflow 3 in Compose with the
   LocalExecutor, keeping its metadata in a separate `airflow` database on the
   same PostgreSQL ([ADR 005](adr/005-airflow-scheduling.md)). The
-  `refresh_models` DAG runs `mobility load-vehicle-positions` and
-  `mobility load-trip-updates` side by side and then `dbt build` every 30
-  minutes, without overlapping runs; dbt builds even if a snapshot failed to
-  load, and the run is then marked as failed. A run on 2026-10-08 loaded both
+  `refresh_models` DAG runs `mobility load-vehicle-positions` and `mobility
+  load-trip-updates` side by side and then `dbt build` every 30 minutes, without
+  overlapping runs; dbt builds even if a snapshot failed to load, and the run is
+  then marked as failed. After a successful build, the run prunes TripUpdates
+  staging; this task has not run in Airflow yet. A run on 2026-10-08 loaded both
   feeds in 3 s and built and tested the models, including the incremental
-  prediction models, in 107 s. The `check_freshness`
-  DAG runs `mobility check-freshness` every 5 minutes, so a stale feed shows
-  up as a failed run in the Airflow UI at `http://127.0.0.1:8080`. A task that
-  runs longer than 10 minutes, or a freshness check longer than 2, is stopped
-  and fails. CI checks that the DAG files import in the Airflow image and that
-  a failed load of either feed fails a test run of `refresh_models`.
+  prediction models, in 107 s. The `check_freshness` DAG runs `mobility
+  check-freshness` every 5 minutes, so a stale feed shows up as a failed run in
+  the Airflow UI at `http://127.0.0.1:8080`. A task that runs longer than 10
+  minutes, or a freshness check longer than 2, is stopped and fails. CI checks
+  that the DAG files import in the Airflow image and that a failed load of
+  either feed fails a test run of `refresh_models`.
 - Feed profiler with [A/M/T reports](../tools/feed_profiler/data-profile.md),
   which led to starting with Mobilis buses
   ([ADR 001](adr/001-krakow-m-first.md)).
@@ -165,15 +178,18 @@ complete.
   only 27% of them change between consecutive snapshots. A day of continuous
   collection adds about 7.6 million rows, about 0.9 GB at the measured 124
   bytes per row, and the archive in MinIO about 0.3 GB; the disk holding both
-  had 83 GB free on 2026-10-08. The 7-day staging window decided in
-  [ADR 006](adr/006-bounded-staging-incremental-models.md), and the reload of
-  older days from RAW, are not implemented yet. The first load of a backlog of
-  several days can exceed the 10-minute task limit in Airflow.
+  had 83 GB free on 2026-10-08. With the 7-day window, staging should level
+  off at about 7 GB, which has not been reached yet; PostgreSQL reuses the
+  space of deleted rows but does not return it to the disk. The first load of
+  a backlog of several days can exceed the 10-minute task limit in Airflow.
 - Every build of the prediction periods reads all of staging to select the
   hours to recompute, about 10 s for 15 million rows. A period that ends at the
   newest snapshot is taken to last 2 minutes past it until its hour is
-  recomputed. A mistake in choosing the hours would leave stale rows that only
-  `--full-refresh` repairs.
+  recomputed. A mistake in choosing the hours would leave stale rows; in the
+  prediction periods `--full-refresh` repairs them, in the arrival predictions
+  only dropping the table and reloading every day from RAW does. An hour is
+  computed only if staging covers the dates from 4 hours before to 2 hours
+  after it, a range taken from one day of predictions.
 - The prediction accuracy covers the same afternoons and evenings as the
   punctuality figures, and only arrivals estimated from vehicle states. The
   schedule is the only baseline; whether Mobilis predicts more than the current
@@ -197,8 +213,8 @@ complete.
 
 ## Next
 
-Implement the 7-day TripUpdates staging window and the reload from RAW
-([ADR 006](adr/006-bounded-staging-incremental-models.md)). Keep the host
-awake and collect for at least a week, including nights, then measure the
-service date inference across midnight and validate the source data. Open
-question: how far the realtime trips cover the schedule.
+Move collection, loading and model builds to an always-on host in AWS, so that
+collection no longer stops when the laptop sleeps. Then collect for at least a
+week, including nights, measure the service date inference across midnight and
+validate the source data. Open question: how far the realtime trips cover the
+schedule.
