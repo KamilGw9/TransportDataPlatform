@@ -1,6 +1,9 @@
 unit_tests:
   - name: arrival_is_window_between_observations_before_and_at_stop
     model: stop_arrival
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: ref('vehicle_position_service_date')
         rows:
@@ -28,3 +31,35 @@ unit_tests:
         # 0.001 degrees of latitude.
         - {stop_sequence: 2, arrived_after: "2026-10-05 10:00:30+00", arrived_by: "2026-10-05 10:01:00+00", distance_to_stop_m: 111.2}
         - {stop_sequence: 4, arrived_after: "2026-10-05 10:01:30+00", arrived_by: "2026-10-05 10:03:00+00", distance_to_stop_m: null}
+
+  - name: later_build_recomputes_service_dates_with_new_positions
+    model: stop_arrival
+    description: >
+      s2 was dated after the previous build, which ended at 12:00. Its arrival
+      starts at s1, dated earlier. 2026-10-04 has no new positions and is not
+      recomputed, although its positions would give an arrival.
+    overrides:
+      macros:
+        is_incremental: true
+    given:
+      - input: this
+        rows:
+          - {service_date: "2026-10-04", built_at: "2026-10-05 12:00:00+00"}
+      - input: ref('vehicle_position_service_date')
+        rows:
+          - {snapshot_sha256: s0, entity_id: e1, schedule_sha256: v1, trip_id: t0, service_date: "2026-10-04", built_at: "2026-10-04 11:00:00+00"}
+          - {snapshot_sha256: s00, entity_id: e1, schedule_sha256: v1, trip_id: t0, service_date: "2026-10-04", built_at: "2026-10-04 11:00:00+00"}
+          - {snapshot_sha256: s1, entity_id: e1, schedule_sha256: v1, trip_id: t1, service_date: "2026-10-05", built_at: "2026-10-05 11:00:00+00"}
+          - {snapshot_sha256: s2, entity_id: e1, schedule_sha256: v1, trip_id: t1, service_date: "2026-10-05", built_at: "2026-10-05 12:30:00+00"}
+      - input: source('staging', 'vehicle_position')
+        rows:
+          - {snapshot_sha256: s0, entity_id: e1, vehicle_id: bus, current_status: IN_TRANSIT_TO, current_stop_sequence: 2, stop_id: b, position_timestamp: "2026-10-04 10:00:30+00"}
+          - {snapshot_sha256: s00, entity_id: e1, vehicle_id: bus, current_status: STOPPED_AT, current_stop_sequence: 2, stop_id: b, position_timestamp: "2026-10-04 10:01:00+00"}
+          - {snapshot_sha256: s1, entity_id: e1, vehicle_id: bus, current_status: IN_TRANSIT_TO, current_stop_sequence: 2, stop_id: b, position_timestamp: "2026-10-05 10:00:30+00"}
+          - {snapshot_sha256: s2, entity_id: e1, vehicle_id: bus, current_status: STOPPED_AT, current_stop_sequence: 2, stop_id: b, position_timestamp: "2026-10-05 10:01:00+00"}
+      - input: source('staging', 'schedule_stop')
+        rows:
+          - {schedule_sha256: v1, stop_id: b, stop_lat: 50.0, stop_lon: 20.0}
+    expect:
+      rows:
+        - {service_date: "2026-10-05", stop_sequence: 2, arrived_after: "2026-10-05 10:00:30+00", arrived_by: "2026-10-05 10:01:00+00"}

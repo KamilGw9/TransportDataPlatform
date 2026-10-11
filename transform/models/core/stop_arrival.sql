@@ -1,3 +1,10 @@
+{{ config(
+    materialized='incremental',
+    incremental_strategy='delete+insert',
+    unique_key='service_date',
+    indexes=[{'columns': ['service_date']}, {'columns': ['built_at']}],
+) }}
+
 -- Arrivals at stops estimated from vehicle states. A vehicle arrived at a stop
 -- between its last observation before reaching it and its first observation
 -- stopped at it, so each arrival is a time window, not a moment. A vehicle
@@ -20,6 +27,17 @@ WITH observation AS (
     JOIN {{ source('staging', 'vehicle_position') }} AS vehicle
         USING (snapshot_sha256, entity_id)
     WHERE service_date.service_date IS NOT NULL
+    {%- if is_incremental() %}
+        -- A new position changes which observations are consecutive, so a
+        -- build recomputes every service date with new positions (ADR 006).
+        AND service_date.service_date IN (
+            SELECT service_date
+            FROM {{ ref('vehicle_position_service_date') }}
+            WHERE built_at > (
+                SELECT coalesce(max(built_at), '-infinity') FROM {{ this }}
+            )
+        )
+    {%- endif %}
 ),
 with_previous AS (
     SELECT
@@ -51,7 +69,8 @@ SELECT
             + cos(radians(arrival.latitude)) * cos(radians(stop.stop_lat))
             * power(sin(radians(stop.stop_lon - arrival.longitude) / 2), 2)
         )))::numeric, 1)
-    END AS distance_to_stop_m
+    END AS distance_to_stop_m,
+    now() AS built_at
 FROM with_previous AS arrival
 LEFT JOIN {{ source('staging', 'schedule_stop') }} AS stop
     USING (schedule_sha256, stop_id)
