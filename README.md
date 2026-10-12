@@ -38,7 +38,8 @@ and what limits them.
   [fetch records](docs/adr/003-fetch-records.md),
   [dbt for core models](docs/adr/004-dbt-core-models.md),
   [Airflow scheduling](docs/adr/005-airflow-scheduling.md),
-  [bounded staging and incremental models](docs/adr/006-bounded-staging-incremental-models.md)
+  [bounded staging and incremental models](docs/adr/006-bounded-staging-incremental-models.md),
+  [AWS hosting](docs/adr/007-aws-hosting.md)
 - [Feed profiler](tools/feed_profiler/README.md) and its
   [findings](tools/feed_profiler/data-profile.md), from the study that preceded
   the pipeline

@@ -18,12 +18,14 @@ and expose SQL queries and a basic dashboard.
 4. Implement validation, realtime-to-schedule matching, and basic analytical models.
 5. Run loading and model builds on a schedule, with the tool chosen in an ADR, so
    that the analytical models stay current without manual steps.
-6. Provide a dashboard for punctuality, predicted delays, coverage, and data
+6. Move collection and model builds to an always-on host in AWS, so that the
+   history covers whole days and nights.
+7. Provide a dashboard for punctuality, predicted delays, coverage, and data
    freshness.
 
 After the first working pipeline, planned additions include Kafka streaming,
-realtime history in ClickHouse, monitoring, and replay from the archive. Weather,
-A/T feeds, and AWS are later extensions.
+realtime history in ClickHouse, monitoring, and replay from the archive. Weather
+and A/T feeds are later extensions.
 
 ## Principles
 

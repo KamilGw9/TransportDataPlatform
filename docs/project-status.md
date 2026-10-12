@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-10-11.
+Last updated: 2026-10-12.
 
 Current stage: 5 of the [project plan](project-plan.md), scheduled runs.
 Airflow loads vehicle positions and trip updates and rebuilds the models every
@@ -241,7 +241,10 @@ complete.
 ## Next
 
 Move collection, loading and model builds to an always-on host in AWS, so that
-collection no longer stops when the laptop sleeps. Then collect for at least a
+collection no longer stops when the laptop sleeps: one EC2 Spot instance
+running the Compose services, with RAW in S3 and the resources described in
+Terraform ([ADR 007](adr/007-aws-hosting.md)). Nothing of it is deployed yet.
+Then collect for at least a
 week, including nights, measure the service date inference across midnight and
 validate the source data. Open question: how far the realtime trips cover the
 schedule.
