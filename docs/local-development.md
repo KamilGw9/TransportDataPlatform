@@ -74,7 +74,11 @@ after changing a model (see [ADR 004](adr/004-dbt-core-models.md)).
 
 S3 defaults to bucket `mobility`, region `us-east-1`, path-style addressing.
 For the local Python collector, the access key is `MINIO_ROOT_USER`, the
-secret key is `MINIO_ROOT_PASSWORD`, and the endpoint is the host S3 URL above.
+secret key is `MINIO_ROOT_PASSWORD`, and the endpoint is `S3_ENDPOINT_URL`,
+the host S3 URL above. If `S3_ENDPOINT_URL` is not set, the client connects to
+AWS S3 and boto3 finds the credentials itself, as on the AWS host
+([ADR 007](adr/007-aws-hosting.md)); an `.env` created before this variable
+existed gets it from `make setup`.
 These are development administrator credentials; application-scoped credentials
 are required before sharing or deploying this environment.
 
@@ -101,10 +105,10 @@ set -a; source .env; set +a
 uv run mobility archive-schedule
 ```
 
-The command needs `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` and `POSTGRES_PASSWORD`
-in the environment; `MINIO_API_PORT`, `S3_REGION`, `S3_BUCKET`, `POSTGRES_PORT`,
-`POSTGRES_DB` and `POSTGRES_USER` default to the `.env.example` values.
-`POSTGRES_HOST` and `S3_ENDPOINT_URL` default to the loopback addresses above. It
+The command needs `S3_ENDPOINT_URL`, `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`
+and `POSTGRES_PASSWORD` in the environment; `S3_REGION`, `S3_BUCKET`,
+`POSTGRES_PORT`, `POSTGRES_DB` and `POSTGRES_USER` default to the
+`.env.example` values, and `POSTGRES_HOST` to the loopback address above. It
 downloads `GTFS_KRK_M.zip`, rejects invalid ZIP data and stores the exact bytes
 under `raw/gtfs/source_id=krakow_ztp_m/sha256=<hash>/schedule.zip`. Running it
 again with an unchanged feed skips the upload. Objects can be inspected in the

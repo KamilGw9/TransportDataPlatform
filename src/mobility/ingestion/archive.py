@@ -27,15 +27,18 @@ _NOT_FOUND_CODES = {"404", "NoSuchKey", "NotFound"}
 
 
 def make_s3_client():
+    region = os.environ.get("S3_REGION", "us-east-1")
+    endpoint_url = os.environ.get("S3_ENDPOINT_URL")
+    if endpoint_url is None:
+        # AWS S3 itself; boto3 finds the credentials, on EC2 those of the
+        # instance role.
+        return boto3.client("s3", region_name=region)
     return boto3.client(
         "s3",
-        endpoint_url=os.environ.get(
-            "S3_ENDPOINT_URL",
-            f"http://127.0.0.1:{os.environ.get('MINIO_API_PORT', '9000')}",
-        ),
+        endpoint_url=endpoint_url,
         aws_access_key_id=os.environ["MINIO_ROOT_USER"],
         aws_secret_access_key=os.environ["MINIO_ROOT_PASSWORD"],
-        region_name=os.environ.get("S3_REGION", "us-east-1"),
+        region_name=region,
     )
 
 
