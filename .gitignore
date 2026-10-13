@@ -13,3 +13,7 @@ __pycache__/
 URBAN_MOBILITY_PROJECT_PLAN.md
 /transform/target/
 /transform/logs/
+/infrastructure/terraform/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
