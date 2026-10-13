@@ -18,3 +18,60 @@ resource "aws_vpc_security_group_egress_rule" "host_all" {
   ip_protocol       = "-1"
   cidr_ipv4         = "0.0.0.0/0"
 }
+
+# The data volume can be attached only in its own zone, so the instance stays
+# in one zone for good.
+data "aws_subnet" "host" {
+  vpc_id            = data.aws_vpc.default.id
+  availability_zone = "eu-central-1a"
+  default_for_az    = true
+}
+
+data "aws_ssm_parameter" "al2023_arm64" {
+  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64"
+}
+
+resource "aws_instance" "host" {
+  ami                    = data.aws_ssm_parameter.al2023_arm64.insecure_value
+  instance_type          = "t4g.medium"
+  subnet_id              = data.aws_subnet.host.id
+  vpc_security_group_ids = [aws_security_group.host.id]
+  iam_instance_profile   = aws_iam_instance_profile.host.name
+
+  # Without a maximum price, AWS caps the Spot price at the on-demand price.
+  instance_market_options {
+    market_type = "spot"
+
+    spot_options {
+      spot_instance_type             = "persistent"
+      instance_interruption_behavior = "stop"
+    }
+  }
+
+  root_block_device {
+    volume_type = "gp3"
+    volume_size = 20
+  }
+
+  # Containers on the Docker bridge network are one hop further from the
+  # metadata service than the host, and with the default limit of 1 they
+  # would not get the role credentials.
+  metadata_options {
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 2
+  }
+
+  tags = {
+    Name = "urban-mobility-host"
+  }
+
+  # The parameter points to a new AMI every few weeks, which would otherwise
+  # replace the instance on the next apply.
+  lifecycle {
+    ignore_changes = [ami]
+  }
+}
+
+output "host_instance_id" {
+  value = aws_instance.host.id
+}
