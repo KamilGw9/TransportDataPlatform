@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 
 import httpx
 import pytest
+from botocore.awsrequest import AWSPreparedRequest
 from botocore.exceptions import ClientError
 from google.transit import gtfs_realtime_pb2
 
@@ -14,6 +15,7 @@ from mobility.ingestion.archive import (
     FetchAttempt,
     archive_and_record,
     fetch_data,
+    make_s3_client,
     record_attempt,
     sha256_hex,
     upload_raw,
@@ -158,6 +160,52 @@ def test_upload_propagates_other_errors() -> None:
         upload_raw(client, "bucket", "some/key", b"data")
 
     assert client.puts == []
+
+
+class RequestSent(Exception):
+    pass
+
+
+def first_request(client) -> AWSPreparedRequest:
+    sent = []
+
+    def stop(request: AWSPreparedRequest, **kwargs) -> None:
+        sent.append(request)
+        raise RequestSent
+
+    client.meta.events.register("before-send.s3.HeadObject", stop)
+    with pytest.raises(RequestSent):
+        client.head_object(Bucket="mobility", Key="probe")
+    return sent[0]
+
+
+def test_s3_client_signs_minio_requests_with_root_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("S3_ENDPOINT_URL", "http://minio:9000")
+    monkeypatch.setenv("MINIO_ROOT_USER", "mobility_admin")
+    monkeypatch.setenv("MINIO_ROOT_PASSWORD", "secret")
+
+    request = first_request(make_s3_client())
+
+    assert request.url.startswith("http://minio:9000/mobility/")
+    assert b"Credential=mobility_admin/" in request.headers["Authorization"]
+
+
+def test_s3_client_without_endpoint_uses_aws_credential_chain(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name in ("S3_ENDPOINT_URL", "MINIO_ROOT_USER", "AWS_PROFILE"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("S3_REGION", "eu-central-1")
+    # Environment keys come before the instance role in the same chain.
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "AKIAEXAMPLE")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "secret")
+
+    request = first_request(make_s3_client())
+
+    assert ".s3.eu-central-1.amazonaws.com/" in request.url
+    assert b"Credential=AKIAEXAMPLE/" in request.headers["Authorization"]
 
 
 def serve(
