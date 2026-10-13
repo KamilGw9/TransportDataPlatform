@@ -38,6 +38,10 @@ resource "aws_instance" "host" {
   vpc_security_group_ids = [aws_security_group.host.id]
   iam_instance_profile   = aws_iam_instance_profile.host.name
 
+  user_data = templatefile("${path.module}/host-init.sh", {
+    volume_serial = replace(aws_ebs_volume.postgres.id, "-", "")
+  })
+
   # Without a maximum price, AWS caps the Spot price at the on-demand price.
   instance_market_options {
     market_type = "spot"
