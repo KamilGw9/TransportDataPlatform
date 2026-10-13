@@ -34,12 +34,12 @@ dnf install -y docker git
 plugins=/usr/local/lib/docker/cli-plugins
 mkdir -p $plugins
 curl -fsSL -o $plugins/docker-compose \
-  https://github.com/docker/compose/releases/download/v2.40.3/docker-compose-linux-aarch64
+  https://github.com/docker/compose/releases/download/v2.40.3/docker-compose-linux-x86_64
 curl -fsSL -o $plugins/docker-buildx \
-  https://github.com/docker/buildx/releases/download/v0.29.1/buildx-v0.29.1.linux-arm64
+  https://github.com/docker/buildx/releases/download/v0.29.1/buildx-v0.29.1.linux-amd64
 sha256sum --check <<EOF
-d26373b19e89160546d15407516cc59f453030d9bc5b43ba7faf16f7b4980137  $plugins/docker-compose
-50e85c4e290b698908421161c1aee069bcc5d4a65b7b7201bfac3a176b223a7e  $plugins/docker-buildx
+dba9d98e1ba5bfe11d88c99b9bd32fc4a0624a30fafe68eea34d61a3e42fd372  $plugins/docker-compose
+7d2d7d6d4680aa349614965aaa33ccec43f1a9a21e908a5ce4cb6adfa5ad5141  $plugins/docker-buildx
 EOF
 chmod +x $plugins/docker-compose $plugins/docker-buildx
 systemctl enable --now docker

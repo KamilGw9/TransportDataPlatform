@@ -27,13 +27,15 @@ data "aws_subnet" "host" {
   default_for_az    = true
 }
 
-data "aws_ssm_parameter" "al2023_arm64" {
-  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64"
+data "aws_ssm_parameter" "al2023_x86_64" {
+  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
 }
 
 resource "aws_instance" "host" {
-  ami                    = data.aws_ssm_parameter.al2023_arm64.insecure_value
-  instance_type          = "t4g.medium"
+  # The free plan of the account allows only a few instance types, and this
+  # is the cheapest of them with 4 GB.
+  instance_type          = "c7i-flex.large"
+  ami                    = data.aws_ssm_parameter.al2023_x86_64.insecure_value
   subnet_id              = data.aws_subnet.host.id
   vpc_security_group_ids = [aws_security_group.host.id]
   iam_instance_profile   = aws_iam_instance_profile.host.name
