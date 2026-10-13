@@ -46,6 +46,7 @@ jobs:
         run: |
           make setup
           docker compose config --quiet
+          docker compose -f compose.yaml -f compose.aws.yaml config --quiet
           bash -n scripts/check_infrastructure.sh
           bash -n scripts/migrate.sh
           sh -n infrastructure/docker/minio/init.sh
