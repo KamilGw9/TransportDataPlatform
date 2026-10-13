@@ -73,7 +73,9 @@ Options considered, with prices for `eu-central-1` (Frankfurt):
 
 Expected cost is about 25 USD a month: 14 for the instance, 5 for 50 GB of
 gp3, 4 for the public IPv4 address, about 1 each for snapshots and S3. Spot
-prices change, and the budget alert reports a forecast above 30 USD.
+prices change, and the budget alert reports a forecast above 30 USD. These
+prices exclude the 23% VAT that the budget counts, so with tax the expected
+cost is about 31 USD and the forecast alert may fire in the first month.
 
 Collection no longer depends on the laptop. An interruption of the Spot
 instance stops collection until it starts again, and nothing reports such a
