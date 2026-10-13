@@ -17,32 +17,39 @@ On 2026-10-12 the database took 4.7 GB and the RAW archive in MinIO 0.9 GB,
 growing by about 0.3 GB a day. On 2026-10-11, with each container limited so
 that all of them except MinIO fit into 1.7 GB, a run of `refresh_models`
 passed, but `dbt build` took 188 s instead of 123 s, and PostgreSQL and the
-Airflow scheduler stayed at their limits and used swap. The budget is 30 USD a
-month.
+Airflow scheduler stayed at their limits and used swap.
 
-Options considered, with prices for `eu-central-1` (Frankfurt):
+The AWS account is on the free plan: 100 USD of credits until 2027-04-12, when
+the account is closed unless it moves to a paid plan. Moving to a paid plan is
+not intended, and the project needs the host for about two months. The free
+plan launches only a few instance types; in `eu-central-1`, the ones with at
+least 4 GB are c7i-flex.large and m7i-flex.large.
+
+Options considered, with prices for `eu-central-1` (Frankfurt) on 2026-10-13,
+before VAT:
 
 - Keep the laptop and disable sleep. It costs nothing, but the laptop is not on
   all the time and is already short of memory with Airflow running.
 - Managed services: RDS for PostgreSQL, MWAA for Airflow, ECS for the
   collectors. The smallest RDS instance has 1 GB of memory, too little for the
-  dbt builds, and a larger one alone costs about the whole budget; MWAA costs
-  hundreds of dollars a month. Each service would also replace a part of the
-  Compose setup that works.
+  dbt builds, and MWAA costs hundreds of dollars a month. Each service would
+  also replace a part of the Compose setup that works.
 - One EC2 instance running the existing Compose setup. A t4g.medium (2 ARM
-  vCPUs, 4 GB) costs about 28 USD a month on demand, which with disks and a
-  public IPv4 address exceeds the budget, or about 14 USD as a Spot instance.
-  A t4g.small (2 GB) costs about 14 USD on demand and cannot be interrupted,
-  but the test above leaves it no margin for a growing database or a longer
-  build, and running out of memory would stop the collectors as well.
+  vCPUs, 4 GB) would cost about 16 USD a month as a Spot instance, but the free
+  plan rejects it. A c7i-flex.large (2 x86 vCPUs, 4 GB) costs about 71 USD a
+  month on demand or about 33 USD as a Spot instance. A t4g.small (2 GB) costs
+  about 5 USD as a Spot instance and 14 USD on demand, but the test above
+  leaves it no margin for a growing database or a longer build, and running
+  out of memory would stop the collectors as well.
 - On the instance, RAW either stays in MinIO on an EBS volume or moves to S3.
   MinIO keeps the setup identical to the local one, but the archive would then
   share the fate of one volume. S3 costs cents a month at this size.
 
 ## Decision
 
-- Run the Compose services on one t4g.medium Spot instance in `eu-central-1`,
-  with Amazon Linux 2023 and 2 GB of swap as a margin for dbt builds. The Spot
+- Run the Compose services on one c7i-flex.large Spot instance in
+  `eu-central-1a`, with Amazon Linux 2023 and 2 GB of swap as a margin for dbt
+  builds, while the free plan credits last. The Spot
   request is persistent and stops the instance on interruption, so it starts
   again with its disks when capacity returns. The maximum price is the
   on-demand price.
@@ -61,7 +68,7 @@ Options considered, with prices for `eu-central-1` (Frankfurt):
 - `make setup` generates the passwords on the instance, so `.env` never leaves
   it.
 - Describe every AWS resource in Terraform under `infrastructure/terraform/`,
-  including an AWS Budgets alert at 30 USD. The state stays on the laptop,
+  including an AWS Budgets alert at 55 USD. The state stays on the laptop,
   outside Git.
 - Move the existing data once: the RAW objects are copied to S3 and the
   database is moved with `pg_dump`. Rebuilding the database from RAW is not
@@ -71,17 +78,19 @@ Options considered, with prices for `eu-central-1` (Frankfurt):
 
 ## Consequences
 
-Expected cost is about 25 USD a month: 14 for the instance, 5 for 50 GB of
-gp3, 4 for the public IPv4 address, about 1 each for snapshots and S3. Spot
-prices change, and the budget alert reports a forecast above 30 USD. These
-prices exclude the 23% VAT that the budget counts, so with tax the expected
-cost is about 31 USD and the forecast alert may fire in the first month.
+Expected cost is about 42 USD a month before VAT: 33 for the instance, 5 for
+50 GB of gp3, 4 for the public IPv4 address, about 1 each for snapshots and
+S3. With the 23% VAT that the budget counts, it is about 52 USD. Spot prices
+change, and the budget alert reports a forecast above 55 USD. The credits last
+between two and two and a half months, depending on whether they also cover
+the VAT. The data has to be copied out of AWS before they run out, or it goes
+with the account.
 
 Collection no longer depends on the laptop. An interruption of the Spot
 instance stops collection until it starts again, and nothing reports such a
 gap, as before. If interruptions turn out to be frequent, switching to
-on demand is a one-line change, but at about 39 USD a month it exceeds the
-budget.
+on demand is a one-line change, but at about 80 USD a month the credits would
+last little more than a month.
 
 The production setup differs from the local one in S3 and in how the services
 get credentials, so S3 access has to be checked on the instance as well. The
