@@ -75,3 +75,28 @@ resource "aws_instance" "host" {
 output "host_instance_id" {
   value = aws_instance.host.id
 }
+
+# The arrival predictions of hours that left the staging window exist only in
+# this database, so Terraform refuses to destroy the volume.
+resource "aws_ebs_volume" "postgres" {
+  availability_zone = data.aws_subnet.host.availability_zone
+  type              = "gp3"
+  size              = 30
+
+  tags = {
+    Name = "urban-mobility-postgres"
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+# Stopping the instance first lets PostgreSQL shut down cleanly before its
+# volume is detached, for example when the instance is replaced.
+resource "aws_volume_attachment" "postgres" {
+  device_name                    = "/dev/sdf"
+  volume_id                      = aws_ebs_volume.postgres.id
+  instance_id                    = aws_instance.host.id
+  stop_instance_before_detaching = true
+}
