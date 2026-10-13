@@ -2,6 +2,12 @@
 
 COMPOSE := docker compose
 
+# The AWS host adds compose.aws.yaml through COMPOSE_FILE in .env and keeps RAW
+# in S3, so MinIO is not started there.
+ifeq ($(findstring compose.aws.yaml,$(shell grep -s '^COMPOSE_FILE=' .env)),)
+MINIO := minio
+endif
+
 help:
 	@printf '%s\n' 'make setup        Prepare local .env (preserves existing values)' 'make up           Start PostgreSQL, MinIO, initialize the bucket and migrate' 'make migrate      Apply SQL migrations (safe to repeat)' 'make collect      Start the GTFS-RT and schedule collectors (runs make up first)' 'make collect-stop Stop both collectors, keeping other services' 'make airflow      Start Airflow (runs make up first)' 'make down         Stop services, retaining all volumes' 'make ps           Show service status' 'make logs         Follow service logs' 'make postgres     Open a SQL session' 'make check-infra  Check SQL and S3 writes across container recreation' 'make check-dags   Check that the Airflow DAGs import' 'make dbt-build    Build and test the dbt models in core' 'make test         Run Python tests' 'make lint         Check Python style'
 
@@ -10,8 +16,10 @@ setup:
 
 up:
 	$(COMPOSE) config --quiet
-	$(COMPOSE) up -d --build --wait --wait-timeout 120 postgres minio
+	$(COMPOSE) up -d --build --wait --wait-timeout 120 postgres $(MINIO)
+ifdef MINIO
 	$(COMPOSE) run --rm --no-deps minio-init
+endif
 	$(MAKE) --no-print-directory migrate
 
 migrate:
