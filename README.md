@@ -33,6 +33,7 @@ and what limits them.
 - [Current status and limitations](docs/project-status.md)
 - [Project plan](docs/project-plan.md)
 - [Local setup and lifecycle](docs/local-development.md)
+- [Deployment on the AWS host](docs/aws-deployment.md)
 - Decisions: [Kraków Mobilis first](docs/adr/001-krakow-m-first.md),
   [local storage](docs/adr/002-local-storage.md),
   [fetch records](docs/adr/003-fetch-records.md),
