@@ -3,10 +3,18 @@
 # templatefile, so bash variables are written without braces.
 set -euo pipefail
 
-# Terraform attaches the volume only after the instance has started.
+# Terraform attaches the volume only after the instance has started. When the
+# attachment fails, exiting marks cloud-init as failed instead of leaving it
+# running for good.
 postgres_device=/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_${volume_serial}
+waited=0
 until [ -e "$postgres_device" ]; do
+  if [ $waited -ge 600 ]; then
+    echo "$postgres_device did not appear within 10 minutes" >&2
+    exit 1
+  fi
   sleep 5
+  waited=$((waited + 5))
 done
 
 # A replacement instance must find the existing database, so only an empty
@@ -33,13 +41,24 @@ echo "/swapfile none swap defaults 0 0" >>/etc/fstab
 dnf install -y docker git
 plugins=/usr/local/lib/docker/cli-plugins
 mkdir -p $plugins
-curl -fsSL -o $plugins/docker-compose \
+# The script does not run again after a failure, so a GitHub or DNS error
+# right after boot is retried instead of leaving the host without Docker.
+curl -fsSL --retry 5 --retry-all-errors -o $plugins/docker-compose \
   https://github.com/docker/compose/releases/download/v2.40.3/docker-compose-linux-x86_64
-curl -fsSL -o $plugins/docker-buildx \
+curl -fsSL --retry 5 --retry-all-errors -o $plugins/docker-buildx \
   https://github.com/docker/buildx/releases/download/v0.29.1/buildx-v0.29.1.linux-amd64
 sha256sum --check <<EOF
 dba9d98e1ba5bfe11d88c99b9bd32fc4a0624a30fafe68eea34d61a3e42fd372  $plugins/docker-compose
 7d2d7d6d4680aa349614965aaa33ccec43f1a9a21e908a5ce4cb6adfa5ad5141  $plugins/docker-buildx
 EOF
 chmod +x $plugins/docker-compose $plugins/docker-buildx
+
+# nofail lets the boot go on without /data, so without this Docker could start
+# first and PostgreSQL would initialise an empty database on the root volume.
+mkdir -p /etc/systemd/system/docker.service.d
+cat >/etc/systemd/system/docker.service.d/data-mount.conf <<EOF
+[Unit]
+RequiresMountsFor=/data
+EOF
+systemctl daemon-reload
 systemctl enable --now docker

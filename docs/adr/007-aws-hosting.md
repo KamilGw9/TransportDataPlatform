@@ -68,7 +68,7 @@ before VAT:
 - `make setup` generates the passwords on the instance, so `.env` never leaves
   it.
 - Describe every AWS resource in Terraform under `infrastructure/terraform/`,
-  including an AWS Budgets alert at 55 USD. The state stays on the laptop,
+  including an AWS Budgets alert at 60 USD. The state stays on the laptop,
   outside Git.
 - Move the existing data once: the RAW objects are copied to S3 and the
   database is moved with `pg_dump`. Rebuilding the database from RAW is not
@@ -78,13 +78,14 @@ before VAT:
 
 ## Consequences
 
-Expected cost is about 42 USD a month before VAT: 33 for the instance, 5 for
+Expected cost is about 44 USD a month before VAT: 33 for the instance, 5 for
 50 GB of gp3, 4 for the public IPv4 address, about 1 each for snapshots and
-S3. With the 23% VAT that the budget counts, it is about 52 USD. Spot prices
-change, and the budget alert reports a forecast above 55 USD. The credits last
-between two and two and a half months, depending on whether they also cover
-the VAT. The data has to be copied out of AWS before they run out, or it goes
-with the account.
+S3. With the 23% VAT that the budget counts, it is about 54 USD. Spot prices
+change, and the budget alert reports a forecast above 60 USD. The credits last
+between 1.8 and 2.3 months, depending on whether they also cover the VAT, so
+with the VAT they run out a few days before the two months the project needs.
+The data has to be copied out of AWS before they run out, or it goes with the
+account.
 
 Collection no longer depends on the laptop. An interruption of the Spot
 instance stops collection until it starts again, and nothing reports such a
