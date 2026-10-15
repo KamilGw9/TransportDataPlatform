@@ -4,11 +4,12 @@ variable "alert_email" {
 }
 
 # The host is expected to cost about 54 USD a month with the VAT, which the
-# budget counts, so the alerts mean something unplanned is running.
+# budget counts. The limit leaves about 10% for Spot price changes, so the
+# alerts mean something unplanned is running.
 resource "aws_budgets_budget" "monthly" {
   name         = "urban-mobility-monthly"
   budget_type  = "COST"
-  limit_amount = "55"
+  limit_amount = "60"
   limit_unit   = "USD"
   time_unit    = "MONTHLY"
 
