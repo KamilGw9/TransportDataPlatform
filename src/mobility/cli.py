@@ -7,7 +7,9 @@ from collections.abc import Callable
 from datetime import UTC, date, datetime
 from importlib.metadata import version
 
-from mobility import schedule, trip_updates, vehicle_positions
+import boto3
+
+from mobility import heartbeat, schedule, trip_updates, vehicle_positions
 from mobility.ingestion import gtfs, gtfs_rt
 from mobility.ingestion.archive import (
     FetchAttempt,
@@ -259,6 +261,11 @@ def main(argv: list[str] | None = None) -> int:
         "check-freshness",
         help="Exit with 1 if a Mobilis GTFS-RT feed has not changed recently",
     )
+    heartbeat_parser = commands.add_parser(
+        "send-heartbeat",
+        help="Report a successful run to CloudWatch, if HEARTBEAT_NAMESPACE is set",
+    )
+    heartbeat_parser.add_argument("check", choices=heartbeat.CHECKS)
     args = parser.parse_args(argv)
     if args.command == "reload-trip-updates" and args.last_date < args.first_date:
         parser.error("--to must not be earlier than --from")
@@ -277,6 +284,15 @@ def main(argv: list[str] | None = None) -> int:
             return 0 if check_freshness(conn) else 1
     if args.command == "prune-trip-updates":
         prune_trip_updates()
+        return 0
+    if args.command == "send-heartbeat":
+        namespace = os.environ.get("HEARTBEAT_NAMESPACE")
+        if namespace is None:
+            # Locally there is no CloudWatch. Airflow marks a task that exits
+            # with 99 as skipped, so the run stays green.
+            print("HEARTBEAT_NAMESPACE is not set, heartbeat skipped")
+            return 99
+        heartbeat.send_heartbeat(boto3.client("cloudwatch"), namespace, args.check)
         return 0
 
     client = make_s3_client()
