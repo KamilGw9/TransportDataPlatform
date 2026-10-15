@@ -1,0 +1,30 @@
+# Added on the AWS host through COMPOSE_FILE in .env (ADR 007). RAW goes to S3
+# itself with the credentials of the instance role, so nothing waits for MinIO,
+# and the database lives on the EBS volume mounted at /data.
+services:
+  postgres:
+    volumes: !override
+      - /data/postgres:/var/lib/postgresql/data
+      - ./infrastructure/docker/postgres/init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
+
+  collector:
+    environment:
+      S3_ENDPOINT_URL: !reset null
+    depends_on: !override
+      postgres:
+        condition: service_healthy
+
+  schedule-collector:
+    environment:
+      S3_ENDPOINT_URL: !reset null
+    depends_on: !override
+      postgres:
+        condition: service_healthy
+
+  # With the LocalExecutor, the loaders run here.
+  airflow-scheduler:
+    environment:
+      S3_ENDPOINT_URL: !reset null
+    depends_on: !override
+      airflow-init:
+        condition: service_completed_successfully

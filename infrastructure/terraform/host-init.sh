@@ -38,7 +38,7 @@ echo "/swapfile none swap defaults 0 0" >>/etc/fstab
 
 # Amazon Linux packages Docker without the Compose and buildx plugins, and
 # Compose builds the images with buildx. The versions match the local ones.
-dnf install -y docker git
+dnf install -y docker git make
 plugins=/usr/local/lib/docker/cli-plugins
 mkdir -p $plugins
 # The script does not run again after a failure, so a GitHub or DNS error

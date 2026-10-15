@@ -72,9 +72,11 @@ resource "aws_instance" "host" {
   }
 
   # The parameter points to a new AMI every few weeks, which would otherwise
-  # replace the instance on the next apply.
+  # replace the instance on the next apply. The init script runs only on the
+  # first boot, so a change to it would stop and start the instance for
+  # nothing; it applies to the next new instance.
   lifecycle {
-    ignore_changes = [ami]
+    ignore_changes = [ami, user_data]
   }
 }
 

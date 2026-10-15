@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-10-12.
+Last updated: 2026-10-15.
 
 Current stage: 5 of the [project plan](project-plan.md), scheduled runs.
 Airflow loads vehicle positions and trip updates and rebuilds the models every
@@ -145,6 +145,17 @@ complete.
   minutes, or a freshness check longer than 2, is stopped and fails. CI checks
   that the DAG files import in the Airflow image and that a failed load of
   either feed fails a test run of `refresh_models`.
+- AWS host: Terraform in `infrastructure/terraform/` describes the RAW bucket,
+  a host role limited to that bucket and SSM, a budget alert and a
+  c7i-flex.large Spot instance, with the database on a separate EBS volume
+  snapshotted daily ([ADR 007](adr/007-aws-hosting.md)). `compose.aws.yaml`
+  points the services at S3 and that volume, and
+  [the deployment guide](aws-deployment.md) describes how they are started
+  there. On 2026-10-13 they ran on the instance for the first time: the
+  collectors stored the schedule and the realtime snapshots in S3 under the
+  same keys as locally, with no failed attempts, and runs of `refresh_models`
+  and `check_freshness` succeeded. The instance has been stopped since
+  2026-10-14, and the laptop still collects the data.
 - Feed profiler with [A/M/T reports](../tools/feed_profiler/data-profile.md),
   which led to starting with Mobilis buses
   ([ADR 001](adr/001-krakow-m-first.md)).
@@ -240,12 +251,10 @@ complete.
 
 ## Next
 
-Move collection, loading and model builds to an always-on host in AWS, so that
-collection no longer stops when the laptop sleeps: one EC2 Spot instance
-running the Compose services, with RAW in S3 and the resources described in
-Terraform ([ADR 007](adr/007-aws-hosting.md)). The instance, the bucket and the
-budget exist, but the services do not run there yet.
-Then collect for at least a
-week, including nights, measure the service date inference across midnight and
-validate the source data. Open question: how far the realtime trips cover the
-schedule.
+Move the data collected on the laptop to the AWS host, copying RAW to S3 and
+the database with `pg_dump` ([ADR 007](adr/007-aws-hosting.md)), and let the
+host collect for at least a week, including nights. Before the instance starts
+again, it needs the Docker drop-in described in the deployment guide, and
+Terraform has to be applied once to raise the budget alert from 55 to 60 USD.
+Then measure the service date inference across midnight and validate the
+source data. Open question: how far the realtime trips cover the schedule.
