@@ -1,6 +1,6 @@
 variable "alert_email" {
   type        = string
-  description = "Address that receives the budget alerts."
+  description = "Address that receives the budget and heartbeat alerts."
 }
 
 # The host is expected to cost about 54 USD a month with the VAT, which the
