@@ -3,10 +3,18 @@
 # templatefile, so bash variables are written without braces.
 set -euo pipefail
 
-# Terraform attaches the volume only after the instance has started.
+# Terraform attaches the volume only after the instance has started. When the
+# attachment fails, exiting marks cloud-init as failed instead of leaving it
+# running for good.
 postgres_device=/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_${volume_serial}
+waited=0
 until [ -e "$postgres_device" ]; do
+  if [ $waited -ge 600 ]; then
+    echo "$postgres_device did not appear within 10 minutes" >&2
+    exit 1
+  fi
   sleep 5
+  waited=$((waited + 5))
 done
 
 # A replacement instance must find the existing database, so only an empty
