@@ -34,9 +34,9 @@ is in `/var/log/cloud-init-output.log`.
 The script runs once per instance, and Terraform ignores changes to it, because
 applying them would stop and start the instance for nothing. A change to
 `host-init.sh` therefore applies to the next new instance; on the running one it
-has to be repeated by hand. The instance created on 2026-10-13 lacks two such
-changes: Make was installed by hand, and the Docker drop-in that waits for
-`/data` is still missing. It is added as root with:
+has to be repeated by hand. On the instance created on 2026-10-13, Make and
+the Docker drop-in that waits for `/data` were added this way, the drop-in as
+root with:
 
 ```bash
 mkdir -p /etc/systemd/system/docker.service.d
@@ -158,6 +158,7 @@ its volumes and snapshots.
 
 ## Limitations
 
-- The data collected on the laptop has not been moved to the host yet.
+- The data collected on the laptop before 2026-10-15 is not on the host
+  ([ADR 007](adr/007-aws-hosting.md)).
 - Nothing reports a failed run or an interruption of the Spot instance.
 - The Terraform state, `.env` and the deploy key each exist in one place only.

@@ -154,8 +154,10 @@ complete.
   there. On 2026-10-13 they ran on the instance for the first time: the
   collectors stored the schedule and the realtime snapshots in S3 under the
   same keys as locally, with no failed attempts, and runs of `refresh_models`
-  and `check_freshness` succeeded. The instance has been stopped since
-  2026-10-14, and the laptop still collects the data.
+  and `check_freshness` succeeded. Since 2026-10-15 the instance collects,
+  loads and builds the models, and the collectors on the laptop are stopped.
+  The data from the laptop was not moved to the host, so the figures above
+  come from the laptop's database.
 - Feed profiler with [A/M/T reports](../tools/feed_profiler/data-profile.md),
   which led to starting with Mobilis buses
   ([ADR 001](adr/001-krakow-m-first.md)).
@@ -251,10 +253,6 @@ complete.
 
 ## Next
 
-Move the data collected on the laptop to the AWS host, copying RAW to S3 and
-the database with `pg_dump` ([ADR 007](adr/007-aws-hosting.md)), and let the
-host collect for at least a week, including nights. Before the instance starts
-again, it needs the Docker drop-in described in the deployment guide, and
-Terraform has to be applied once to raise the budget alert from 55 to 60 USD.
-Then measure the service date inference across midnight and validate the
-source data. Open question: how far the realtime trips cover the schedule.
+Collect on the AWS host for at least a week, including nights, then measure
+the service date inference across midnight and validate the source data. Open
+question: how far the realtime trips cover the schedule.

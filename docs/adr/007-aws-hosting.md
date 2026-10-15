@@ -70,11 +70,14 @@ before VAT:
 - Describe every AWS resource in Terraform under `infrastructure/terraform/`,
   including an AWS Budgets alert at 60 USD. The state stays on the laptop,
   outside Git.
-- Move the existing data once: the RAW objects are copied to S3 and the
-  database is moved with `pg_dump`. Rebuilding the database from RAW is not
-  enough, because the loaders find snapshots through `metadata.fetch_attempt`
-  and the arrival predictions of hours that left the staging window exist only
-  in the database.
+- Do not move the data collected on the laptop. The host keeps the database
+  of its test run on 2026-10-13 and collects continuously from 2026-10-15; the
+  laptop keeps the first week, from which the figures in the project status
+  were computed. That week covers no night, so it adds little to what a week
+  on the host gives. Moving it would need the RAW objects copied to S3 and the
+  database moved with `pg_dump`, because the loaders find snapshots through
+  `metadata.fetch_attempt` and the arrival predictions of hours that left the
+  staging window exist only in the database.
 
 ## Consequences
 
@@ -91,7 +94,8 @@ Collection no longer depends on the laptop. An interruption of the Spot
 instance stops collection until it starts again, and nothing reports such a
 gap, as before. If interruptions turn out to be frequent, switching to
 on demand is a one-line change, but at about 80 USD a month the credits would
-last little more than a month.
+last little more than a month. The data of the first week and the data from
+the host are in separate databases, so no figure covers both.
 
 The production setup differs from the local one in S3 and in how the services
 get credentials, so S3 access has to be checked on the instance as well. The
