@@ -49,6 +49,14 @@ with DAG(
         trigger_rule=TriggerRule.ONE_FAILED,
     )
 
+    # dbt_build and the prune run after a failed load too, so the heartbeat
+    # depends on the loads directly.
+    send_heartbeat = BashOperator(
+        task_id="send_heartbeat",
+        bash_command=f"{MOBILITY_BIN}/mobility send-heartbeat refresh_models",
+    )
+
     load_vehicle_positions >> [dbt_build, fail_run_on_load_failure]
     load_trip_updates >> [dbt_build, fail_run_on_load_failure]
     dbt_build >> prune_trip_updates
+    [load_vehicle_positions, load_trip_updates, prune_trip_updates] >> send_heartbeat

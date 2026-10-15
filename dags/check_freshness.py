@@ -15,7 +15,13 @@ with DAG(
     # A hung check would block the next ones without failing.
     default_args={"execution_timeout": timedelta(minutes=2)},
 ):
-    BashOperator(
+    check_freshness = BashOperator(
         task_id="check_freshness",
         bash_command="/opt/mobility/.venv/bin/mobility check-freshness",
     )
+    send_heartbeat = BashOperator(
+        task_id="send_heartbeat",
+        bash_command="/opt/mobility/.venv/bin/mobility send-heartbeat check_freshness",
+    )
+
+    check_freshness >> send_heartbeat

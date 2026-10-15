@@ -36,6 +36,27 @@ resource "aws_iam_role_policy" "raw_access" {
   policy = data.aws_iam_policy_document.raw_access.json
 }
 
+data "aws_iam_policy_document" "heartbeat" {
+  # PutMetricData has no resource ARN; the condition keeps the role to the
+  # namespace that the alarms watch.
+  statement {
+    actions   = ["cloudwatch:PutMetricData"]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "cloudwatch:namespace"
+      values   = [local.heartbeat_namespace]
+    }
+  }
+}
+
+resource "aws_iam_role_policy" "heartbeat" {
+  name   = "heartbeat"
+  role   = aws_iam_role.host.id
+  policy = data.aws_iam_policy_document.heartbeat.json
+}
+
 resource "aws_iam_role_policy_attachment" "ssm" {
   role       = aws_iam_role.host.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
