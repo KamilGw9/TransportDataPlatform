@@ -122,8 +122,8 @@ docker compose exec postgres psql -U mobility -d airflow -c \
 ```
 
 The Airflow UI listens only on the loopback address of the instance. A port
-forwarding session should make it available at `http://127.0.0.1:8080` on the
-laptop, but this has not been tried yet:
+forwarding session makes it available at `http://127.0.0.1:8080` on the
+laptop until the session is closed with Ctrl+C:
 
 ```bash
 aws ssm start-session --target "$(terraform output -raw host_instance_id)" \
