@@ -19,9 +19,11 @@ terraform init
 terraform apply
 ```
 
-`terraform.tfvars` sets `alert_email`, the address of the budget alerts; it is
-ignored by Git, like the Terraform state, which exists only on the laptop. The
-outputs `host_instance_id` and `raw_bucket` are used below.
+`terraform.tfvars` sets `alert_email`, the address of the budget and
+heartbeat alerts; it is ignored by Git, like the Terraform state, which exists
+only on the laptop. The outputs `host_instance_id` and `raw_bucket` are used
+below. After the first apply, AWS sends a confirmation email for the alert
+topic, and no heartbeat alert is delivered until the link in it is opened.
 
 On its first boot the instance runs `host-init.sh`: it creates a file system on
 the data volume if the volume is empty, mounts it at `/data`, adds 2 GB of swap
@@ -121,6 +123,15 @@ docker compose exec postgres psql -U mobility -d airflow -c \
   "SELECT dag_id, state, start_date FROM dag_run ORDER BY start_date DESC LIMIT 10"
 ```
 
+The heartbeat alarms, from `infrastructure/terraform` on the laptop. Both are
+`OK` once the first runs of `check_freshness` and `refresh_models` have sent
+their heartbeats, and each sends an email when it changes state:
+
+```bash
+aws cloudwatch describe-alarms --alarm-name-prefix urban-mobility- \
+  --query 'MetricAlarms[].[AlarmName,StateValue]' --output table
+```
+
 The Airflow UI listens only on the loopback address of the instance. A port
 forwarding session makes it available at `http://127.0.0.1:8080` on the
 laptop until the session is closed with Ctrl+C:
@@ -154,11 +165,13 @@ Stopping the instance disables its Spot request, so AWS does not start it again
 by itself. A start sent within about a minute of the stop fails with
 `IncorrectSpotRequestState`. After a start, every service starts again through
 `restart: unless-stopped` and collection resumes. A stopped instance costs only
-its volumes and snapshots.
+its volumes and snapshots, and sends no heartbeats, so both alarms fire while it
+is stopped.
 
 ## Limitations
 
 - The data collected on the laptop before 2026-10-15 is not on the host
   ([ADR 007](adr/007-aws-hosting.md)).
-- Nothing reports a failed run or an interruption of the Spot instance.
+- An alert says which DAG has had no successful run, not why; the cause is in
+  the task logs in Airflow.
 - The Terraform state, `.env` and the deploy key each exist in one place only.
