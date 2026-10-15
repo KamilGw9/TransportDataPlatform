@@ -42,4 +42,13 @@ dba9d98e1ba5bfe11d88c99b9bd32fc4a0624a30fafe68eea34d61a3e42fd372  $plugins/docke
 7d2d7d6d4680aa349614965aaa33ccec43f1a9a21e908a5ce4cb6adfa5ad5141  $plugins/docker-buildx
 EOF
 chmod +x $plugins/docker-compose $plugins/docker-buildx
+
+# nofail lets the boot go on without /data, so without this Docker could start
+# first and PostgreSQL would initialise an empty database on the root volume.
+mkdir -p /etc/systemd/system/docker.service.d
+cat >/etc/systemd/system/docker.service.d/data-mount.conf <<EOF
+[Unit]
+RequiresMountsFor=/data
+EOF
+systemctl daemon-reload
 systemctl enable --now docker
