@@ -33,9 +33,11 @@ echo "/swapfile none swap defaults 0 0" >>/etc/fstab
 dnf install -y docker git
 plugins=/usr/local/lib/docker/cli-plugins
 mkdir -p $plugins
-curl -fsSL -o $plugins/docker-compose \
+# The script does not run again after a failure, so a GitHub or DNS error
+# right after boot is retried instead of leaving the host without Docker.
+curl -fsSL --retry 5 --retry-all-errors -o $plugins/docker-compose \
   https://github.com/docker/compose/releases/download/v2.40.3/docker-compose-linux-x86_64
-curl -fsSL -o $plugins/docker-buildx \
+curl -fsSL --retry 5 --retry-all-errors -o $plugins/docker-buildx \
   https://github.com/docker/buildx/releases/download/v0.29.1/buildx-v0.29.1.linux-amd64
 sha256sum --check <<EOF
 dba9d98e1ba5bfe11d88c99b9bd32fc4a0624a30fafe68eea34d61a3e42fd372  $plugins/docker-compose
