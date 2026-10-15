@@ -21,10 +21,13 @@ services:
       postgres:
         condition: service_healthy
 
-  # With the LocalExecutor, the loaders run here.
+  # With the LocalExecutor, the loaders and heartbeats run here. The region
+  # is the one in infrastructure/terraform/main.tf, where the alarms are.
   airflow-scheduler:
     environment:
       S3_ENDPOINT_URL: !reset null
+      HEARTBEAT_NAMESPACE: UrbanMobility
+      AWS_DEFAULT_REGION: eu-central-1
     depends_on: !override
       airflow-init:
         condition: service_completed_successfully

@@ -12,26 +12,29 @@ if bag.import_errors:
 print("DAGs:", ", ".join(sorted(bag.dag_ids)))
 
 
-def refresh_run_state(failing_load: str | None) -> str:
+def refresh_run_states(failing_load: str | None) -> tuple[str, str]:
     dag = bag.get_dag("refresh_models")
     for load in ["load_vehicle_positions", "load_trip_updates"]:
         dag.get_task(load).bash_command = "exit 1" if load == failing_load else "true"
     for task in ["dbt_build", "prune_trip_updates"]:
         dag.get_task(task).bash_command = "true"
-    return dag.test().state
+    run = dag.test()
+    return run.state, run.get_task_instance("send_heartbeat").state
 
 
-# dbt builds even after a failed load, and the run must still show the failure.
+# dbt builds even after a failed load, and the run must still show the failure
+# and send no heartbeat. Without HEARTBEAT_NAMESPACE, as here, a successful
+# run skips the heartbeat.
 for failing_load, expected in [
-    ("load_vehicle_positions", "failed"),
-    ("load_trip_updates", "failed"),
-    (None, "success"),
+    ("load_vehicle_positions", ("failed", "upstream_failed")),
+    ("load_trip_updates", ("failed", "upstream_failed")),
+    (None, ("success", "skipped")),
 ]:
-    state = refresh_run_state(failing_load)
-    if state != expected:
+    states = refresh_run_states(failing_load)
+    if states != expected:
         print(
-            f"refresh_models with failing load {failing_load} ended as {state}, "
-            f"expected {expected}",
+            f"refresh_models with failing load {failing_load} ended as {states} "
+            f"(run, heartbeat), expected {expected}",
             file=sys.stderr,
         )
         sys.exit(1)
