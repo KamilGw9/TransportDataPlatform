@@ -2,13 +2,14 @@
 
 Last updated: 2026-10-15.
 
-Current stage: 5 of the [project plan](project-plan.md), scheduled runs.
-Airflow loads vehicle positions and trip updates and rebuilds the models every
-30 minutes and checks feed freshness every 5 minutes. Stage 4 delivered
-realtime-to-schedule matching, arrivals at stops, route punctuality and the
-accuracy of TripUpdates predictions; validation of the source data from that
-stage is not started. Stages 1 to 3 are
-complete.
+Current stage: 6 of the [project plan](project-plan.md), an always-on host in
+AWS. Since 2026-10-15 one EC2 instance collects the feeds, and Airflow on it
+loads vehicle positions and trip updates and rebuilds the models every 30
+minutes and checks feed freshness every 5 minutes; whether the history now
+covers whole nights is not checked yet. Stage 5 delivered the scheduled runs.
+Stage 4 delivered realtime-to-schedule matching, arrivals at stops, route
+punctuality and the accuracy of TripUpdates predictions; validation of the
+source data from that stage is not started. Stages 1 to 3 are complete.
 
 ## What works
 
