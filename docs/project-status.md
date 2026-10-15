@@ -243,7 +243,8 @@ complete.
 Move collection, loading and model builds to an always-on host in AWS, so that
 collection no longer stops when the laptop sleeps: one EC2 Spot instance
 running the Compose services, with RAW in S3 and the resources described in
-Terraform ([ADR 007](adr/007-aws-hosting.md)). Nothing of it is deployed yet.
+Terraform ([ADR 007](adr/007-aws-hosting.md)). The instance, the bucket and the
+budget exist, but the services do not run there yet.
 Then collect for at least a
 week, including nights, measure the service date inference across midnight and
 validate the source data. Open question: how far the realtime trips cover the

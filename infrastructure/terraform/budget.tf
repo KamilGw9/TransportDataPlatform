@@ -3,10 +3,12 @@ variable "alert_email" {
   description = "Address that receives the budget alerts."
 }
 
+# The host is expected to cost about 42 USD a month before VAT, which the
+# budget counts, so the alerts mean something unplanned is running.
 resource "aws_budgets_budget" "monthly" {
   name         = "urban-mobility-monthly"
   budget_type  = "COST"
-  limit_amount = "30"
+  limit_amount = "55"
   limit_unit   = "USD"
   time_unit    = "MONTHLY"
 
