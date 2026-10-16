@@ -12,7 +12,9 @@
 --
 -- A date is added once, when a schedule download after its start shows that
 -- no later version was archived before it. Like the matching of positions, a
--- date waits while a version archived before it is not loaded.
+-- date waits while a version archived before it is not loaded. A version
+-- replaced by a newer one before it loaded never will, and the dates that
+-- waited for it get the version before it.
 WITH schedule_attempt AS (
     SELECT sha256 AS schedule_sha256, fetched_at
     FROM {{ source('metadata', 'fetch_attempt') }}

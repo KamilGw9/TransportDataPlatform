@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-10-16.
+Last updated: 2026-10-17.
 
 Current stage: 6 of the [project plan](project-plan.md), an always-on host in
 AWS. Since 2026-10-15 one EC2 instance collects the feeds, and Airflow on it
@@ -271,17 +271,22 @@ source data from that stage is not started. Stages 1 to 3 are complete.
 - Trip coverage takes the trips of a service date from the version archived
   before the date started. A version published during a day that renamed the
   trips of that same day would make them look unseen; on 2026-10-16 the
-  renamed trips started the next day. Why 19 collected trips of 2026-10-16
-  never appeared in VehiclePositions is not known.
+  renamed trips started the next day. A version replaced by a newer one before
+  it loaded never loads, and the dates that waited for it get the version
+  before it, as the matching of positions does. Why 19 collected trips of
+  2026-10-16 never appeared in VehiclePositions is not known.
 - A trip counts as collected if a new VehiclePositions snapshot was downloaded
-  and loaded at least once during its scheduled time, and the same trips are the base for TripUpdates,
-  which predicts them up to 3 hours earlier. `marts.trip_coverage` is rebuilt
-  in full and reads every dated position on each build.
+  and loaded at least once during its scheduled time, and the same trips are
+  the base for TripUpdates, which predicts them up to 3 hours earlier.
+  `marts.trip_coverage` is rebuilt in full and reads every dated position on
+  each build.
 - TripUpdates predictions made before their service date was added to
   `core.scheduled_trip` are kept for as long as staging keeps them, 7 days. A
   date that waits longer for a schedule version loses those trips; reloading
   it from RAW brings them back. `core.trip_update_trip` ignores
-  `--full-refresh`, as it keeps more than staging.
+  `--full-refresh`, as it keeps more than staging, so if a rebuild of
+  `core.scheduled_trip` gives a date another schedule version, the trips of
+  that date have to be reloaded from RAW too.
 
 ## Next
 
