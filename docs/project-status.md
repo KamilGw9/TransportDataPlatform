@@ -1,12 +1,13 @@
 # Project status
 
-Last updated: 2026-10-15.
+Last updated: 2026-10-16.
 
 Current stage: 6 of the [project plan](project-plan.md), an always-on host in
 AWS. Since 2026-10-15 one EC2 instance collects the feeds, and Airflow on it
 loads vehicle positions and trip updates and rebuilds the models every 30
-minutes and checks feed freshness every 5 minutes; whether the history now
-covers whole nights is not checked yet. Stage 5 delivered the scheduled runs.
+minutes and checks feed freshness every 5 minutes, with an email alert when
+either stops succeeding. Its first day, including the night, has no gap in
+collection. Stage 5 delivered the scheduled runs.
 Stage 4 delivered realtime-to-schedule matching, arrivals at stops, route
 punctuality and the accuracy of TripUpdates predictions; validation of the
 source data from that stage is not started. Stages 1 to 3 are complete.
@@ -158,15 +159,32 @@ source data from that stage is not started. Stages 1 to 3 are complete.
   and `check_freshness` succeeded. Since 2026-10-15 the instance collects,
   loads and builds the models, and the collectors on the laptop are stopped.
   The data from the laptop was not moved to the host, so the figures above
-  come from the laptop's database.
+  come from the laptop's database. In the host's first day, to 2026-10-16
+  21:00 UTC, no realtime feed had a gap of more than 2 minutes between
+  attempts. A schedule version published at 14:37 UTC loaded in the same run,
+  and every position matched a trip before and after it. Positions between
+  midnight and 03:00 local time got the previous service date, and their
+  arrivals the service hours 24 to 27.
+- Alerts: after a successful run, `check_freshness` and `refresh_models` send a
+  heartbeat metric to CloudWatch (`mobility send-heartbeat`). A CloudWatch
+  alarm for each emails the `alert_email` address in Terraform when no
+  heartbeat has arrived for 15 minutes or an hour, so a failed run, a stopped
+  scheduler and a stopped host all raise it. Both alarms sent an email when
+  they were created, before the first heartbeats, and have been `OK` since
+  2026-10-15; a stale feed or a failed run has not raised one yet.
 - Feed profiler with [A/M/T reports](../tools/feed_profiler/data-profile.md),
   which led to starting with Mobilis buses
   ([ADR 001](adr/001-krakow-m-first.md)).
 
 ## Limitations
 
-- A stale feed fails a run in Airflow, but nothing sends an alert, so it is
-  noticed only when someone opens the UI.
+- An alert says only which DAG has had no successful run; the cause is in the
+  task logs in Airflow. A stale feed is reported after about 15 minutes and a
+  failed model refresh after about an hour.
+- About 1% of realtime downloads on the host fail on the Mobilis side, half
+  with 404 for the feed URL and half with an incomplete or undecodable
+  message. A failed download is not retried until the next run 30 s later; in
+  the first day, none failed twice in a row.
 - Freshness is judged by changes of the content hash. The GTFS-RT header
   timestamp is stored only for VehiclePositions loaded into staging; on those,
   a snapshot reached the collector a median of 8 s after it was generated.
@@ -176,13 +194,13 @@ source data from that stage is not started. Stages 1 to 3 are complete.
   matching within days. `check-freshness` covers only the realtime feeds.
 - Staging keeps only the schedule columns needed for matching; shapes, agency
   and feed info stay in the RAW ZIP.
-- Collection runs only while the host is awake. Between 2026-10-03 and 2026-10-06
-  the collectors were stopped for 17 to 23 hours each night by the laptop's sleep,
-  so about 17 hours of realtime data were collected in four days and none of it
-  covers midnight. Service dates after midnight are checked only by unit tests.
-  Nothing reports such gaps after the fact. Airflow sleeps with the host too:
-  missed runs are not repeated, and the next run loads everything collected
-  since.
+- On the laptop, collection ran only while it was awake. Between 2026-10-03 and
+  2026-10-06 the collectors were stopped for 17 to 23 hours each night by the
+  laptop's sleep, so about 17 hours of realtime data were collected in four days
+  and none of it covers midnight. Service dates after midnight are checked on
+  one night of data from the host. Nothing reports gaps in collection after the
+  fact. Airflow stops with its host too: missed runs are not repeated, and the
+  next run loads everything collected since.
 - Mobilis does not send `start_date` in trip descriptors, so the service date is
   inferred from the schedule. Matching uses the schedule version known at
   download time, not the version that applies on the service date. The time zone
