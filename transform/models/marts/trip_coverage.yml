@@ -1,0 +1,51 @@
+unit_tests:
+  - name: coverage_counts_collected_trips_seen_in_positions
+    model: trip_coverage
+    description: >
+      All trips run on 2026-10-16, when the service day starts at 22:00 UTC the
+      day before. Collection stopped between 07:00 and 09:00 UTC, and the
+      latest matched snapshot was downloaded at 22:50 UTC.
+    given:
+      - input: ref('scheduled_trip')
+        rows:
+          # Service hour 8.
+          - {service_date: "2026-10-16", schedule_sha256: v1, trip_id: seen, route_id: r143, trip_start: "2026-10-16 06:10:00+00", trip_end: "2026-10-16 06:50:00+00"}
+          - {service_date: "2026-10-16", schedule_sha256: v1, trip_id: missing, route_id: r143, trip_start: "2026-10-16 06:20:00+00", trip_end: "2026-10-16 06:55:00+00"}
+          # Service hour 9, during the gap.
+          - {service_date: "2026-10-16", schedule_sha256: v1, trip_id: in_gap, route_id: r143, trip_start: "2026-10-16 07:10:00+00", trip_end: "2026-10-16 07:50:00+00"}
+          # Service hour 24, 00:30 local on 2026-10-17.
+          - {service_date: "2026-10-16", schedule_sha256: v1, trip_id: night, route_id: r601, trip_start: "2026-10-16 22:30:00+00", trip_end: "2026-10-16 23:10:00+00"}
+          # Service hour 25, downloaded only after the latest matched snapshot.
+          - {service_date: "2026-10-16", schedule_sha256: v1, trip_id: latest, route_id: r601, trip_start: "2026-10-16 23:05:00+00", trip_end: "2026-10-16 23:40:00+00"}
+      - input: ref('vehicle_position_service_date')
+        rows:
+          - {service_date: "2026-10-16", trip_id: seen}
+          - {service_date: "2026-10-16", trip_id: seen}
+          # The same trip_id on another date says nothing about this one.
+          - {service_date: "2026-10-15", trip_id: missing}
+          # Reported before collection stopped, and not counted as seen.
+          - {service_date: "2026-10-16", trip_id: in_gap}
+          - {service_date: "2026-10-16", trip_id: night}
+      - input: ref('vehicle_position_match')
+        rows:
+          - {first_fetched_at: "2026-10-16 06:30:00+00"}
+          - {first_fetched_at: "2026-10-16 22:50:00+00"}
+      - input: source('metadata', 'fetch_attempt')
+        rows:
+          - {source_id: krakow_ztp_m_vehicle_positions, status: stored, fetched_at: "2026-10-16 06:30:00+00"}
+          - {source_id: krakow_ztp_m_vehicle_positions, status: stored, fetched_at: "2026-10-16 07:00:00+00"}
+          - {source_id: krakow_ztp_m_vehicle_positions, status: failed, fetched_at: "2026-10-16 07:30:00+00"}
+          - {source_id: krakow_ztp_m_trip_updates, status: stored, fetched_at: "2026-10-16 07:30:00+00"}
+          - {source_id: krakow_ztp_m_vehicle_positions, status: unchanged, fetched_at: "2026-10-16 09:00:00+00"}
+          - {source_id: krakow_ztp_m_vehicle_positions, status: stored, fetched_at: "2026-10-16 22:45:00+00"}
+          - {source_id: krakow_ztp_m_vehicle_positions, status: stored, fetched_at: "2026-10-16 23:10:00+00"}
+      - input: source('staging', 'schedule_route')
+        rows:
+          - {schedule_sha256: v1, route_id: r143, route_short_name: "143"}
+          - {schedule_sha256: v1, route_id: r601, route_short_name: "601"}
+    expect:
+      rows:
+        - {route_short_name: "143", service_date: "2026-10-16", service_hour: 8, scheduled_trips: 2, collected_trips: 2, seen_trips: 1}
+        - {route_short_name: "143", service_date: "2026-10-16", service_hour: 9, scheduled_trips: 1, collected_trips: 0, seen_trips: 0}
+        - {route_short_name: "601", service_date: "2026-10-16", service_hour: 24, scheduled_trips: 1, collected_trips: 1, seen_trips: 1}
+        - {route_short_name: "601", service_date: "2026-10-16", service_hour: 25, scheduled_trips: 1, collected_trips: 0, seen_trips: 0}
