@@ -12,7 +12,9 @@
 -- TripUpdates staging keeps 7 days (ADR 006), but a trip that appeared stays
 -- appeared, so a build only adds the trips of prediction periods newer than
 -- the newest snapshot it has seen, and nothing is ever deleted. For the same
--- reason, --full-refresh leaves this table as it is.
+-- reason, --full-refresh leaves this table as it is. first_predicted_at tells
+-- from when TripUpdates are known: when this table is first built, older
+-- predictions have already left staging.
 --
 -- A date is added to scheduled_trip only after a schedule download after its
 -- start, up to an hour later or longer while a version waits to load, and its
@@ -21,7 +23,7 @@
 -- added. A date that waits longer than staging keeps TripUpdates loses those
 -- trips; reloading it from RAW gives the snapshots new ids and brings them back.
 WITH new_period AS (
-    SELECT trip_id, scheduled_arrival, last_snapshot_id
+    SELECT trip_id, scheduled_arrival, in_force_from, last_snapshot_id
     FROM {{ ref('stop_time_prediction') }}
     {%- if is_incremental() %}
     WHERE last_snapshot_id > (SELECT coalesce(max(last_snapshot_id), 0) FROM {{ this }})
@@ -33,6 +35,7 @@ WITH new_period AS (
 SELECT
     scheduled.service_date,
     scheduled.trip_id,
+    min(new_period.in_force_from) AS first_predicted_at,
     max(new_period.last_snapshot_id) AS last_snapshot_id
 FROM new_period
 JOIN {{ ref('scheduled_trip') }} AS scheduled

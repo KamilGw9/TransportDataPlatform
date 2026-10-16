@@ -17,9 +17,14 @@
 -- on 2026-10-16 they kept the same trip_ids.
 --
 -- A trip is predicted if it appeared in TripUpdates. Both feeds are
--- downloaded together, so it is counted among the collected trips too.
+-- downloaded together, so it is counted among the collected trips too. For an
+-- hour with trips that started before the earliest prediction kept, the count
+-- is unknown rather than 0.
 WITH matched_until AS (
     SELECT max(first_fetched_at) AS fetched_at FROM {{ ref('vehicle_position_match') }}
+),
+predicted_from AS (
+    SELECT min(first_predicted_at) AS predicted_at FROM {{ ref('trip_update_trip') }}
 ),
 seen_trip AS (
     SELECT DISTINCT service_date, trip_id
@@ -52,7 +57,9 @@ SELECT
     count(*) AS scheduled_trips,
     count(*) FILTER (WHERE trip.collected) AS collected_trips,
     count(*) FILTER (WHERE trip.collected AND trip.seen) AS seen_trips,
-    count(*) FILTER (WHERE trip.collected AND trip.predicted) AS predicted_trips
+    CASE WHEN min(trip.trip_start) >= (SELECT predicted_at FROM predicted_from)
+        THEN count(*) FILTER (WHERE trip.collected AND trip.predicted)
+    END AS predicted_trips
 FROM trip
 JOIN {{ source('staging', 'schedule_route') }} AS route
     ON route.schedule_sha256 = trip.schedule_sha256

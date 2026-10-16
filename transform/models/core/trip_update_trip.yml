@@ -17,11 +17,11 @@ unit_tests:
     given:
       - input: ref('stop_time_prediction')
         rows:
-          - {trip_id: morning, scheduled_arrival: "2026-10-15 06:10:00+00", last_snapshot_id: 1}
-          - {trip_id: morning, scheduled_arrival: "2026-10-15 06:40:00+00", last_snapshot_id: 3}
-          - {trip_id: morning, scheduled_arrival: "2026-10-16 06:20:00+00", last_snapshot_id: 5}
+          - {trip_id: morning, scheduled_arrival: "2026-10-15 06:10:00+00", in_force_from: "2026-10-15 05:30:00+00", last_snapshot_id: 1}
+          - {trip_id: morning, scheduled_arrival: "2026-10-15 06:40:00+00", in_force_from: "2026-10-15 05:20:00+00", last_snapshot_id: 3}
+          - {trip_id: morning, scheduled_arrival: "2026-10-16 06:20:00+00", in_force_from: "2026-10-16 05:40:00+00", last_snapshot_id: 5}
           # Not in the schedule of any date added so far.
-          - {trip_id: unknown, scheduled_arrival: "2026-10-16 06:20:00+00", last_snapshot_id: 5}
+          - {trip_id: unknown, scheduled_arrival: "2026-10-16 06:20:00+00", in_force_from: "2026-10-16 05:40:00+00", last_snapshot_id: 5}
       - input: ref('scheduled_trip')
         rows:
           - {service_date: "2026-10-15", trip_id: morning, trip_start: "2026-10-15 06:00:00+00", trip_end: "2026-10-15 06:40:00+00"}
@@ -29,8 +29,8 @@ unit_tests:
           - {service_date: "2026-10-17", trip_id: morning, trip_start: "2026-10-17 06:00:00+00", trip_end: "2026-10-17 06:40:00+00"}
     expect:
       rows:
-        - {service_date: "2026-10-15", trip_id: morning, last_snapshot_id: 3}
-        - {service_date: "2026-10-16", trip_id: morning, last_snapshot_id: 5}
+        - {service_date: "2026-10-15", trip_id: morning, first_predicted_at: "2026-10-15 05:20:00+00", last_snapshot_id: 3}
+        - {service_date: "2026-10-16", trip_id: morning, first_predicted_at: "2026-10-16 05:40:00+00", last_snapshot_id: 5}
 
   - name: later_build_adds_trips_of_new_prediction_periods
     model: trip_update_trip

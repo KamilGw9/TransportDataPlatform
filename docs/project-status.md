@@ -118,7 +118,10 @@ source data from that stage is not started. Stages 1 to 3 are complete.
   scheduled trip that includes its scheduled arrival. `marts.trip_coverage`
   counts, per route, service date and hour, the scheduled trips, those that
   ran while VehiclePositions was collected, and how many of these appeared in
-  VehiclePositions and in TripUpdates. On the host's data to 2026-10-16
+  VehiclePositions and in TripUpdates. The TripUpdates count is empty for
+  hours with trips that started before the earliest prediction
+  `core.trip_update_trip` keeps, as older ones left staging before it was
+  first built. On the host's data to 2026-10-16
   21:30 UTC, run as a query without writing to the database, 2,543 (99.3%) of
   the 2,562 collected trips of 2026-10-16 appeared in VehiclePositions and
   2,553 (99.6%) in TripUpdates; the models are not deployed on the host yet.

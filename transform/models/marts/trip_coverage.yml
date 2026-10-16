@@ -4,10 +4,12 @@ unit_tests:
     description: >
       All trips run on 2026-10-16, when the service day starts at 22:00 UTC the
       day before. Collection stopped between 07:00 and 09:00 UTC, and the
-      latest matched snapshot was downloaded at 22:50 UTC.
+      latest matched snapshot was downloaded at 22:50 UTC. The predictions of
+      2026-10-15 had left staging when trip_update_trip was first built.
     given:
       - input: ref('scheduled_trip')
         rows:
+          - {service_date: "2026-10-15", schedule_sha256: v1, trip_id: seen, route_id: r143, trip_start: "2026-10-15 06:10:00+00", trip_end: "2026-10-15 06:50:00+00"}
           # Service hour 8.
           - {service_date: "2026-10-16", schedule_sha256: v1, trip_id: seen, route_id: r143, trip_start: "2026-10-16 06:10:00+00", trip_end: "2026-10-16 06:50:00+00"}
           - {service_date: "2026-10-16", schedule_sha256: v1, trip_id: missing, route_id: r143, trip_start: "2026-10-16 06:20:00+00", trip_end: "2026-10-16 06:55:00+00"}
@@ -28,15 +30,16 @@ unit_tests:
           - {service_date: "2026-10-16", trip_id: night}
       - input: ref('trip_update_trip')
         rows:
-          - {service_date: "2026-10-16", trip_id: missing}
-          - {service_date: "2026-10-16", trip_id: in_gap}
-          - {service_date: "2026-10-16", trip_id: night}
+          - {service_date: "2026-10-16", trip_id: missing, first_predicted_at: "2026-10-16 05:40:00+00"}
+          - {service_date: "2026-10-16", trip_id: in_gap, first_predicted_at: "2026-10-16 06:30:00+00"}
+          - {service_date: "2026-10-16", trip_id: night, first_predicted_at: "2026-10-16 21:00:00+00"}
       - input: ref('vehicle_position_match')
         rows:
           - {first_fetched_at: "2026-10-16 06:30:00+00"}
           - {first_fetched_at: "2026-10-16 22:50:00+00"}
       - input: source('metadata', 'fetch_attempt')
         rows:
+          - {source_id: krakow_ztp_m_vehicle_positions, status: stored, fetched_at: "2026-10-15 06:30:00+00"}
           - {source_id: krakow_ztp_m_vehicle_positions, status: stored, fetched_at: "2026-10-16 06:30:00+00"}
           - {source_id: krakow_ztp_m_vehicle_positions, status: stored, fetched_at: "2026-10-16 07:00:00+00"}
           - {source_id: krakow_ztp_m_vehicle_positions, status: failed, fetched_at: "2026-10-16 07:30:00+00"}
@@ -50,6 +53,7 @@ unit_tests:
           - {schedule_sha256: v1, route_id: r601, route_short_name: "601"}
     expect:
       rows:
+        - {route_short_name: "143", service_date: "2026-10-15", service_hour: 8, scheduled_trips: 1, collected_trips: 1, seen_trips: 0, predicted_trips: null}
         - {route_short_name: "143", service_date: "2026-10-16", service_hour: 8, scheduled_trips: 2, collected_trips: 2, seen_trips: 1, predicted_trips: 1}
         - {route_short_name: "143", service_date: "2026-10-16", service_hour: 9, scheduled_trips: 1, collected_trips: 0, seen_trips: 0, predicted_trips: 0}
         - {route_short_name: "601", service_date: "2026-10-16", service_hour: 24, scheduled_trips: 1, collected_trips: 1, seen_trips: 1, predicted_trips: 1}
