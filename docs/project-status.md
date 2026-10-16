@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-10-15.
+Last updated: 2026-10-16.
 
 Current stage: 6 of the [project plan](project-plan.md), an always-on host in
 AWS. Since 2026-10-15 one EC2 instance collects the feeds, and Airflow on it
@@ -109,13 +109,27 @@ source data from that stage is not started. Stages 1 to 3 are complete.
   60 s; an arrival is on time from 1 minute early to 3 minutes late, judged by
   the middle of its delay range. Of 18,233 such arrivals by 2026-10-06, 59.3%
   were on time, 40.4% late and 0.3% early.
+- Trip coverage: `core.scheduled_trip` lists the trips scheduled for each
+  service date, from the schedule version that was the latest one archived
+  when the service day started. Versions overlap: the one archived on
+  2026-10-16 covered the same dates as the previous one, but renamed every
+  trip from 2026-10-17. `core.trip_update_trip` keeps the trips that appeared
+  in TripUpdates beyond the staging window, dating each prediction by the
+  scheduled trip that includes its scheduled arrival. `marts.trip_coverage`
+  counts, per route, service date and hour, the scheduled trips, those that
+  ran while VehiclePositions was collected, and how many of these appeared in
+  VehiclePositions and in TripUpdates. On the host's data to 2026-10-16
+  21:30 UTC, run as a query without writing to the database, 2,543 (99.3%) of
+  the 2,562 collected trips of 2026-10-16 appeared in VehiclePositions and
+  2,553 (99.6%) in TripUpdates; the models are not deployed on the host yet.
 - Models in `core` and `marts` are built by dbt from `transform/`
   (`make dbt-build`), with unit tests of each model, including a later build of
   each incremental one, and uniqueness tests on the matching and prediction
   outputs; migrations cover only `metadata` and `staging`
   ([ADR 004](adr/004-dbt-core-models.md)). All models except
-  `marts.prediction_accuracy` are incremental
-  ([ADR 006](adr/006-bounded-staging-incremental-models.md)). Matching and
+  `marts.prediction_accuracy` and `marts.trip_coverage` are incremental
+  ([ADR 006](adr/006-bounded-staging-incremental-models.md)). Scheduled trips
+  add each service date once, after it starts; matching and
   service dates add the positions of new snapshots; arrivals, trusted arrivals
   and route punctuality recompute the service dates with new positions; the
   two prediction models recompute the hours of scheduled arrivals touched by
@@ -251,9 +265,24 @@ source data from that stage is not started. Stages 1 to 3 are complete.
   S3-compatible storage.
 - The profiling sample is short and does not cover overnight service or daylight
   saving time changes.
+- Trip coverage takes the trips of a service date from the version archived
+  before the date started. A version published during a day that renamed the
+  trips of that same day would make them look unseen; on 2026-10-16 the
+  renamed trips started the next day. Why 19 collected trips of 2026-10-16
+  never appeared in VehiclePositions is not known.
+- A trip counts as collected if VehiclePositions was downloaded at least once
+  during its scheduled time, and the same trips are the base for TripUpdates,
+  which predicts them up to 3 hours earlier. `marts.trip_coverage` is rebuilt
+  in full and reads every dated position on each build.
+- A TripUpdates prediction made before its service date was added to
+  `core.scheduled_trip` is not counted if no later snapshot predicts the trip.
+  This happens only while a schedule version waits to load; reloading those
+  dates from RAW brings the trips back. `core.trip_update_trip` ignores
+  `--full-refresh`, as it keeps more than staging.
 
 ## Next
 
 Collect on the AWS host for at least a week, including nights, then measure
-the service date inference across midnight and validate the source data. Open
-question: how far the realtime trips cover the schedule.
+the service date inference across midnight and validate the source data. Deploy
+the trip coverage models on the host and look into the trips that never
+appear in the realtime feeds.
