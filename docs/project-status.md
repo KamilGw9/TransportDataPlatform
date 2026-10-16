@@ -274,10 +274,10 @@ source data from that stage is not started. Stages 1 to 3 are complete.
   during its scheduled time, and the same trips are the base for TripUpdates,
   which predicts them up to 3 hours earlier. `marts.trip_coverage` is rebuilt
   in full and reads every dated position on each build.
-- A TripUpdates prediction made before its service date was added to
-  `core.scheduled_trip` is not counted if no later snapshot predicts the trip.
-  This happens only while a schedule version waits to load; reloading those
-  dates from RAW brings the trips back. `core.trip_update_trip` ignores
+- TripUpdates predictions made before their service date was added to
+  `core.scheduled_trip` are kept for as long as staging keeps them, 7 days. A
+  date that waits longer for a schedule version loses those trips; reloading
+  it from RAW brings them back. `core.trip_update_trip` ignores
   `--full-refresh`, as it keeps more than staging.
 
 ## Next

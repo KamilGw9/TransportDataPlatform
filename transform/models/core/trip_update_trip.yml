@@ -59,3 +59,28 @@ unit_tests:
     expect:
       rows:
         - {service_date: "2026-10-16", trip_id: new_trip, last_snapshot_id: 6}
+
+  - name: later_build_adds_trips_predicted_before_their_date
+    model: trip_update_trip
+    description: >
+      Snapshot 4 predicted a trip of 2026-10-17, which starts at 22:00 UTC on
+      2026-10-16, before that date was added to scheduled_trip. The previous
+      build then saw snapshots up to 5 through a trip of 2026-10-16.
+    overrides:
+      macros:
+        is_incremental: true
+    given:
+      - input: this
+        format: sql
+        rows: SELECT '2026-10-16'::date AS service_date, 'late_night'::text AS trip_id, 5::bigint AS last_snapshot_id
+      - input: ref('stop_time_prediction')
+        rows:
+          - {trip_id: late_night, scheduled_arrival: "2026-10-16 23:20:00+00", last_snapshot_id: 5}
+          - {trip_id: after_midnight, scheduled_arrival: "2026-10-16 22:10:00+00", last_snapshot_id: 4}
+      - input: ref('scheduled_trip')
+        rows:
+          - {service_date: "2026-10-16", trip_id: late_night, trip_start: "2026-10-16 23:00:00+00", trip_end: "2026-10-16 23:40:00+00"}
+          - {service_date: "2026-10-17", trip_id: after_midnight, trip_start: "2026-10-16 22:00:00+00", trip_end: "2026-10-16 22:40:00+00"}
+    expect:
+      rows:
+        - {service_date: "2026-10-17", trip_id: after_midnight, last_snapshot_id: 4}
