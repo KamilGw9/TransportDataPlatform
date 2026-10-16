@@ -1,16 +1,17 @@
 # Project status
 
-Last updated: 2026-10-16.
+Last updated: 2026-10-17.
 
 Current stage: 6 of the [project plan](project-plan.md), an always-on host in
 AWS. Since 2026-10-15 one EC2 instance collects the feeds, and Airflow on it
 loads vehicle positions and trip updates and rebuilds the models every 30
 minutes and checks feed freshness every 5 minutes, with an email alert when
-either stops succeeding. Its first day, including the night, has no gap in
-collection. Stage 5 delivered the scheduled runs.
-Stage 4 delivered realtime-to-schedule matching, arrivals at stops, route
-punctuality and the accuracy of TripUpdates predictions; validation of the
-source data from that stage is not started. Stages 1 to 3 are complete.
+either stops succeeding. In its first day, including the night, no realtime
+feed went more than 2 minutes without a download attempt. Stage 5 delivered
+the scheduled runs. Stage 4 delivered realtime-to-schedule matching, arrivals
+at stops, route punctuality and the accuracy of TripUpdates predictions;
+validation of the source data from that stage is not started. Stages 1 to 3
+are complete.
 
 ## What works
 
@@ -143,7 +144,8 @@ source data from that stage is not started. Stages 1 to 3 are complete.
   feeds in 3 s and built and tested the models, including the incremental
   prediction models, in 107 s. The `check_freshness` DAG runs `mobility
   check-freshness` every 5 minutes, so a stale feed shows up as a failed run in
-  the Airflow UI at `http://127.0.0.1:8080`. A task that runs longer than 10
+  the Airflow UI at `http://127.0.0.1:8080`. Both DAGs end with a
+  `send_heartbeat` task, described under Alerts. A task that runs longer than 10
   minutes, or a freshness check longer than 2, is stopped and fails. CI checks
   that the DAG files import in the Airflow image and that a failed load of
   either feed fails a test run of `refresh_models`.
@@ -161,16 +163,19 @@ source data from that stage is not started. Stages 1 to 3 are complete.
   The data from the laptop was not moved to the host, so the figures above
   come from the laptop's database. In the host's first day, to 2026-10-16
   21:00 UTC, no realtime feed had a gap of more than 2 minutes between
-  attempts. A schedule version published at 14:37 UTC loaded in the same run,
-  and every position matched a trip before and after it. Positions between
-  midnight and 03:00 local time got the previous service date, and their
-  arrivals the service hours 24 to 27.
+  attempts. A schedule version archived at 14:37 UTC on 2026-10-16 was loaded
+  in the same collector cycle, and every position matched a trip before and
+  after it. Positions of the night trips after midnight got the previous
+  service date, and their arrivals the service hours 24 to 27, as in the
+  schedule.
 - Alerts: after a successful run, `check_freshness` and `refresh_models` send a
   heartbeat metric to CloudWatch (`mobility send-heartbeat`). A CloudWatch
-  alarm for each emails the `alert_email` address in Terraform when no
-  heartbeat has arrived for 15 minutes or an hour, so a failed run, a stopped
-  scheduler and a stopped host all raise it. Both alarms sent an email when
-  they were created, before the first heartbeats, and have been `OK` since
+  alarm for each emails the `alert_email` address in Terraform when three
+  5-minute periods or two 30-minute periods in a row have no heartbeat, so a
+  failed run, a stopped scheduler and a stopped host all raise it. The periods
+  are aligned to the clock, so an alarm fires 15 to 20 or 60 to 90 minutes
+  after the last heartbeat, plus the time CloudWatch takes to evaluate it. The
+  schedule collector has no alarm. Both alarms have been `OK` since
   2026-10-15; a stale feed or a failed run has not raised one yet.
 - Feed profiler with [A/M/T reports](../tools/feed_profiler/data-profile.md),
   which led to starting with Mobilis buses
@@ -179,12 +184,15 @@ source data from that stage is not started. Stages 1 to 3 are complete.
 ## Limitations
 
 - An alert says only which DAG has had no successful run; the cause is in the
-  task logs in Airflow. A stale feed is reported after about 15 minutes and a
-  failed model refresh after about an hour.
+  task logs in Airflow. A feed fails the freshness check once it has not
+  changed for 5 minutes, so the email comes 15 to 25 minutes after it stops
+  changing; a failed model refresh is reported 60 to 90 minutes after the last
+  successful one.
 - About 1% of realtime downloads on the host fail on the Mobilis side, half
   with 404 for the feed URL and half with an incomplete or undecodable
-  message. A failed download is not retried until the next run 30 s later; in
-  the first day, none failed twice in a row.
+  message. A failed download is not retried; the next collector cycle starts
+  30 s after the previous one started. In the first day, none failed twice in
+  a row.
 - Freshness is judged by changes of the content hash. The GTFS-RT header
   timestamp is stored only for VehiclePositions loaded into staging; on those,
   a snapshot reached the collector a median of 8 s after it was generated.
@@ -198,9 +206,10 @@ source data from that stage is not started. Stages 1 to 3 are complete.
   2026-10-06 the collectors were stopped for 17 to 23 hours each night by the
   laptop's sleep, so about 17 hours of realtime data were collected in four days
   and none of it covers midnight. Service dates after midnight are checked on
-  one night of data from the host. Nothing reports gaps in collection after the
-  fact. Airflow stops with its host too: missed runs are not repeated, and the
-  next run loads everything collected since.
+  one night of data from the host. A stopped collector raises the freshness
+  alarm, but a gap shorter than about 20 minutes raises nothing, and nothing
+  lists past gaps. Airflow stops with its host too: missed runs are not
+  repeated, and the next run loads everything collected since.
 - Mobilis does not send `start_date` in trip descriptors, so the service date is
   inferred from the schedule. Matching uses the schedule version known at
   download time, not the version that applies on the service date. The time zone
