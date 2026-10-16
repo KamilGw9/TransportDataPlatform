@@ -1,7 +1,8 @@
 {{ config(materialized='table') }}
 
--- How many scheduled trips of each route appear in VehiclePositions, by
--- service date and the hour of the service day in which they start.
+-- How many scheduled trips of each route appear in VehiclePositions and
+-- TripUpdates, by service date and the hour of the service day in which they
+-- start.
 --
 -- A trip is collected if VehiclePositions was downloaded at least once between
 -- its scheduled start and end, up to the latest snapshot matched so far:
@@ -14,6 +15,9 @@
 -- whatever schedule version the position was matched with: the version of the
 -- date and the version known when a position was downloaded can differ, and
 -- on 2026-10-16 they kept the same trip_ids.
+--
+-- A trip is predicted if it appeared in TripUpdates. Both feeds are
+-- downloaded together, so it is counted among the collected trips too.
 WITH matched_until AS (
     SELECT max(first_fetched_at) AS fetched_at FROM {{ ref('vehicle_position_match') }}
 ),
@@ -32,9 +36,11 @@ trip AS (
                 AND attempt.fetched_at BETWEEN scheduled.trip_start AND scheduled.trip_end
                 AND attempt.fetched_at <= (SELECT fetched_at FROM matched_until)
         ) AS collected,
-        seen_trip.trip_id IS NOT NULL AS seen
+        seen_trip.trip_id IS NOT NULL AS seen,
+        predicted_trip.trip_id IS NOT NULL AS predicted
     FROM {{ ref('scheduled_trip') }} AS scheduled
     LEFT JOIN seen_trip USING (service_date, trip_id)
+    LEFT JOIN {{ ref('trip_update_trip') }} AS predicted_trip USING (service_date, trip_id)
 )
 SELECT
     route.route_short_name,
@@ -45,7 +51,8 @@ SELECT
         AS service_hour,
     count(*) AS scheduled_trips,
     count(*) FILTER (WHERE trip.collected) AS collected_trips,
-    count(*) FILTER (WHERE trip.collected AND trip.seen) AS seen_trips
+    count(*) FILTER (WHERE trip.collected AND trip.seen) AS seen_trips,
+    count(*) FILTER (WHERE trip.collected AND trip.predicted) AS predicted_trips
 FROM trip
 JOIN {{ source('staging', 'schedule_route') }} AS route
     ON route.schedule_sha256 = trip.schedule_sha256

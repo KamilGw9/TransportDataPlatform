@@ -1,5 +1,5 @@
 unit_tests:
-  - name: coverage_counts_collected_trips_seen_in_positions
+  - name: coverage_counts_collected_trips_seen_in_each_feed
     model: trip_coverage
     description: >
       All trips run on 2026-10-16, when the service day starts at 22:00 UTC the
@@ -26,6 +26,11 @@ unit_tests:
           # Reported before collection stopped, and not counted as seen.
           - {service_date: "2026-10-16", trip_id: in_gap}
           - {service_date: "2026-10-16", trip_id: night}
+      - input: ref('trip_update_trip')
+        rows:
+          - {service_date: "2026-10-16", trip_id: missing}
+          - {service_date: "2026-10-16", trip_id: in_gap}
+          - {service_date: "2026-10-16", trip_id: night}
       - input: ref('vehicle_position_match')
         rows:
           - {first_fetched_at: "2026-10-16 06:30:00+00"}
@@ -45,7 +50,7 @@ unit_tests:
           - {schedule_sha256: v1, route_id: r601, route_short_name: "601"}
     expect:
       rows:
-        - {route_short_name: "143", service_date: "2026-10-16", service_hour: 8, scheduled_trips: 2, collected_trips: 2, seen_trips: 1}
-        - {route_short_name: "143", service_date: "2026-10-16", service_hour: 9, scheduled_trips: 1, collected_trips: 0, seen_trips: 0}
-        - {route_short_name: "601", service_date: "2026-10-16", service_hour: 24, scheduled_trips: 1, collected_trips: 1, seen_trips: 1}
-        - {route_short_name: "601", service_date: "2026-10-16", service_hour: 25, scheduled_trips: 1, collected_trips: 0, seen_trips: 0}
+        - {route_short_name: "143", service_date: "2026-10-16", service_hour: 8, scheduled_trips: 2, collected_trips: 2, seen_trips: 1, predicted_trips: 1}
+        - {route_short_name: "143", service_date: "2026-10-16", service_hour: 9, scheduled_trips: 1, collected_trips: 0, seen_trips: 0, predicted_trips: 0}
+        - {route_short_name: "601", service_date: "2026-10-16", service_hour: 24, scheduled_trips: 1, collected_trips: 1, seen_trips: 1, predicted_trips: 1}
+        - {route_short_name: "601", service_date: "2026-10-16", service_hour: 25, scheduled_trips: 1, collected_trips: 0, seen_trips: 0, predicted_trips: 0}
