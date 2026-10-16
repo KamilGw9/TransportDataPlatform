@@ -273,8 +273,8 @@ source data from that stage is not started. Stages 1 to 3 are complete.
   trips of that same day would make them look unseen; on 2026-10-16 the
   renamed trips started the next day. Why 19 collected trips of 2026-10-16
   never appeared in VehiclePositions is not known.
-- A trip counts as collected if VehiclePositions was downloaded at least once
-  during its scheduled time, and the same trips are the base for TripUpdates,
+- A trip counts as collected if a new VehiclePositions snapshot was downloaded
+  and loaded at least once during its scheduled time, and the same trips are the base for TripUpdates,
   which predicts them up to 3 hours earlier. `marts.trip_coverage` is rebuilt
   in full and reads every dated position on each build.
 - TripUpdates predictions made before their service date was added to

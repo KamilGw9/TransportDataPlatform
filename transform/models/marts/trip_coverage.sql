@@ -4,12 +4,13 @@
 -- TripUpdates, by service date and the hour of the service day in which they
 -- start.
 --
--- A trip is collected if VehiclePositions was downloaded at least once between
--- its scheduled start and end, up to the latest snapshot matched so far:
--- positions are loaded up to 30 minutes after download, and a trip that has
--- just started would otherwise count as unseen. Only collected trips can be
--- seen, so a gap in collection lowers collected_trips, not the share of them
--- that was seen.
+-- A trip is collected if a new VehiclePositions snapshot was downloaded and
+-- loaded at least once between its scheduled start and end, up to the latest
+-- snapshot matched so far: positions are loaded up to 30 minutes after
+-- download, and a trip that has just started would otherwise count as unseen.
+-- A download that returned the previous snapshot again brings no positions.
+-- Only collected trips can be seen, so a gap in collection lowers
+-- collected_trips, not the share of them that was seen.
 --
 -- A trip is seen if any position on its service date names its trip_id,
 -- whatever schedule version the position was matched with: the version of the
@@ -20,8 +21,29 @@
 -- downloaded together, so it is counted among the collected trips too. For an
 -- hour with trips that started before the earliest prediction kept, the count
 -- is unknown rather than 0.
-WITH matched_until AS (
-    SELECT max(first_fetched_at) AS fetched_at FROM {{ ref('vehicle_position_match') }}
+
+-- Used twice, so PostgreSQL would otherwise compute it once in full, and the
+-- downloads during each trip could not be found by the index on fetched_at.
+WITH vehicle_position_attempt AS NOT MATERIALIZED (
+    SELECT attempt.sha256 AS snapshot_sha256, attempt.fetched_at
+    FROM {{ source('metadata', 'fetch_attempt') }} AS attempt
+    JOIN {{ source('staging', 'vehicle_position_snapshot') }} AS snapshot
+        ON snapshot.snapshot_sha256 = attempt.sha256
+    WHERE attempt.source_id = 'krakow_ztp_m_vehicle_positions'
+        AND attempt.status = 'stored'
+),
+-- From the newest download back, so that the index on snapshot_sha256 finds
+-- it without reading every match.
+matched_until AS (
+    SELECT fetched_at
+    FROM vehicle_position_attempt AS attempt
+    WHERE EXISTS (
+        SELECT 1
+        FROM {{ ref('vehicle_position_match') }} AS match
+        WHERE match.snapshot_sha256 = attempt.snapshot_sha256
+    )
+    ORDER BY fetched_at DESC
+    LIMIT 1
 ),
 predicted_from AS (
     SELECT min(first_predicted_at) AS predicted_at FROM {{ ref('trip_update_trip') }}
@@ -30,15 +52,15 @@ seen_trip AS (
     SELECT DISTINCT service_date, trip_id
     FROM {{ ref('vehicle_position_service_date') }}
 ),
-trip AS (
+-- Materialized: inlined, each count below that uses collected looked up the
+-- downloads again, which more than doubled the time of the query.
+trip AS MATERIALIZED (
     SELECT
         scheduled.*,
         EXISTS (
             SELECT 1
-            FROM {{ source('metadata', 'fetch_attempt') }} AS attempt
-            WHERE attempt.source_id = 'krakow_ztp_m_vehicle_positions'
-                AND attempt.status <> 'failed'
-                AND attempt.fetched_at BETWEEN scheduled.trip_start AND scheduled.trip_end
+            FROM vehicle_position_attempt AS attempt
+            WHERE attempt.fetched_at BETWEEN scheduled.trip_start AND scheduled.trip_end
                 AND attempt.fetched_at <= (SELECT fetched_at FROM matched_until)
         ) AS collected,
         seen_trip.trip_id IS NOT NULL AS seen,
