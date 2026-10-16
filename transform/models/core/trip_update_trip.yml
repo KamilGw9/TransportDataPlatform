@@ -1,0 +1,86 @@
+models:
+  - name: trip_update_trip
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "(service_date, trip_id)"
+
+unit_tests:
+  - name: prediction_belongs_to_trip_of_date_with_its_scheduled_arrival
+    model: trip_update_trip
+    description: >
+      The same trip runs 08:00 to 08:40 local on 2026-10-15 and 2026-10-16;
+      Kraków is UTC+2.
+    overrides:
+      macros:
+        is_incremental: false
+    given:
+      - input: ref('stop_time_prediction')
+        rows:
+          - {trip_id: morning, scheduled_arrival: "2026-10-15 06:10:00+00", in_force_from: "2026-10-15 05:30:00+00", last_snapshot_id: 1}
+          - {trip_id: morning, scheduled_arrival: "2026-10-15 06:40:00+00", in_force_from: "2026-10-15 05:20:00+00", last_snapshot_id: 3}
+          - {trip_id: morning, scheduled_arrival: "2026-10-16 06:20:00+00", in_force_from: "2026-10-16 05:40:00+00", last_snapshot_id: 5}
+          # Not in the schedule of any date added so far.
+          - {trip_id: unknown, scheduled_arrival: "2026-10-16 06:20:00+00", in_force_from: "2026-10-16 05:40:00+00", last_snapshot_id: 5}
+      - input: ref('scheduled_trip')
+        rows:
+          - {service_date: "2026-10-15", trip_id: morning, trip_start: "2026-10-15 06:00:00+00", trip_end: "2026-10-15 06:40:00+00"}
+          - {service_date: "2026-10-16", trip_id: morning, trip_start: "2026-10-16 06:00:00+00", trip_end: "2026-10-16 06:40:00+00"}
+          - {service_date: "2026-10-17", trip_id: morning, trip_start: "2026-10-17 06:00:00+00", trip_end: "2026-10-17 06:40:00+00"}
+    expect:
+      rows:
+        - {service_date: "2026-10-15", trip_id: morning, first_predicted_at: "2026-10-15 05:20:00+00", last_snapshot_id: 3}
+        - {service_date: "2026-10-16", trip_id: morning, first_predicted_at: "2026-10-16 05:40:00+00", last_snapshot_id: 5}
+
+  - name: later_build_adds_trips_of_new_prediction_periods
+    model: trip_update_trip
+    description: >
+      The previous build saw snapshots up to 5. The period of seen_before was
+      extended by later snapshots, and the one of too_old was not, although
+      the trip is missing from the table.
+    overrides:
+      macros:
+        is_incremental: true
+    given:
+      # As SQL: on a new database the table does not exist yet to take columns from.
+      - input: this
+        format: sql
+        rows: SELECT '2026-10-16'::date AS service_date, 'seen_before'::text AS trip_id, 5::bigint AS last_snapshot_id
+      - input: ref('stop_time_prediction')
+        rows:
+          - {trip_id: seen_before, scheduled_arrival: "2026-10-16 06:10:00+00", last_snapshot_id: 7}
+          - {trip_id: new_trip, scheduled_arrival: "2026-10-16 07:10:00+00", last_snapshot_id: 6}
+          - {trip_id: too_old, scheduled_arrival: "2026-10-16 07:10:00+00", last_snapshot_id: 4}
+      - input: ref('scheduled_trip')
+        rows:
+          - {service_date: "2026-10-16", trip_id: seen_before, trip_start: "2026-10-16 06:00:00+00", trip_end: "2026-10-16 06:40:00+00"}
+          - {service_date: "2026-10-16", trip_id: new_trip, trip_start: "2026-10-16 07:00:00+00", trip_end: "2026-10-16 07:40:00+00"}
+          - {service_date: "2026-10-16", trip_id: too_old, trip_start: "2026-10-16 07:00:00+00", trip_end: "2026-10-16 07:40:00+00"}
+    expect:
+      rows:
+        - {service_date: "2026-10-16", trip_id: new_trip, last_snapshot_id: 6}
+
+  - name: later_build_adds_trips_predicted_before_their_date
+    model: trip_update_trip
+    description: >
+      Snapshot 4 predicted a trip of 2026-10-17, which starts at 22:00 UTC on
+      2026-10-16, before that date was added to scheduled_trip. The previous
+      build then saw snapshots up to 5 through a trip of 2026-10-16.
+    overrides:
+      macros:
+        is_incremental: true
+    given:
+      - input: this
+        format: sql
+        rows: SELECT '2026-10-16'::date AS service_date, 'late_night'::text AS trip_id, 5::bigint AS last_snapshot_id
+      - input: ref('stop_time_prediction')
+        rows:
+          - {trip_id: late_night, scheduled_arrival: "2026-10-16 23:20:00+00", last_snapshot_id: 5}
+          - {trip_id: after_midnight, scheduled_arrival: "2026-10-16 22:10:00+00", last_snapshot_id: 4}
+      - input: ref('scheduled_trip')
+        rows:
+          - {service_date: "2026-10-16", trip_id: late_night, trip_start: "2026-10-16 23:00:00+00", trip_end: "2026-10-16 23:40:00+00"}
+          - {service_date: "2026-10-17", trip_id: after_midnight, trip_start: "2026-10-16 22:00:00+00", trip_end: "2026-10-16 22:40:00+00"}
+    expect:
+      rows:
+        - {service_date: "2026-10-17", trip_id: after_midnight, last_snapshot_id: 4}
