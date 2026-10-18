@@ -9,7 +9,9 @@ at `/data`. The deployment is manual: a shell on the instance through SSM,
 
 On the laptop this needs Terraform 1.14 or newer, AWS CLI v2 with credentials
 for the account and the Session Manager plugin for the AWS CLI. The commands
-below assume that `AWS_PROFILE` selects those credentials.
+below assume that `AWS_PROFILE` selects those credentials and `AWS_REGION` is
+`eu-central-1`, the region in `main.tf`. In another region the AWS CLI does not
+find the instance, and `aws ssm start-session` fails with `TargetNotConnected`.
 
 ## Create the resources
 
