@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-10-17.
+Last updated: 2026-10-18.
 
 Current stage: 6 of the [project plan](project-plan.md), an always-on host in
 AWS. Since 2026-10-15 one EC2 instance collects the feeds, and Airflow on it
@@ -123,10 +123,10 @@ are complete.
   VehiclePositions and in TripUpdates. The TripUpdates count is empty for
   hours with trips that started before the earliest prediction
   `core.trip_update_trip` keeps, as older ones left staging before it was
-  first built. On the host's data to 2026-10-16
-  21:30 UTC, run as a query without writing to the database, 2,543 (99.3%) of
-  the 2,562 collected trips of 2026-10-16 appeared in VehiclePositions and
-  2,553 (99.6%) in TripUpdates; the models are not deployed on the host yet.
+  first built. On the host, where `refresh_models` builds these models, all
+  2,594 trips of 2026-10-16 were collected; 2,575 (99.3%) of them appeared in
+  VehiclePositions and 2,585 (99.7%) in TripUpdates. All 1,791 trips of
+  Saturday 2026-10-17 appeared in both.
 - Models in `core` and `marts` are built by dbt from `transform/`
   (`make dbt-build`), with unit tests of each model, including a later build of
   each incremental one, and uniqueness tests on the matching and prediction
@@ -318,6 +318,5 @@ are complete.
 ## Next
 
 Collect on the AWS host for at least a week, including nights, then measure
-the service date inference across midnight and validate the source data. Deploy
-the trip coverage models on the host and look into the trips that never
-appear in the realtime feeds.
+the service date inference across midnight and validate the source data. Look
+into the trips that never appear in the realtime feeds.
