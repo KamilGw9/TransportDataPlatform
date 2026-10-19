@@ -1,9 +1,10 @@
-# Local PostgreSQL and S3 storage
+# Local development
 
-This stage supplies storage for the ingestion pipeline. It does not create
-transport-domain tables. Requirements: Docker with Compose v2,
-GNU Make, Python 3, and uv for Python quality checks. Run commands from the repository
-root. Docker Desktop users must enable integration with their WSL distribution.
+This guide runs the whole pipeline on one machine: PostgreSQL and MinIO, the
+collectors, the loaders, the dbt models and Airflow. Requirements: Docker with
+Compose v2, GNU Make, a system `python3` for `make setup`, and uv, which
+installs Python 3.12 for the project. Run commands from the repository root.
+Docker Desktop users must enable integration with their WSL distribution.
 
 ## Start and stop
 
@@ -52,10 +53,12 @@ to loopback. Use local `.env` values for credentials; do not paste them into log
 PostgreSQL defaults to database/user `mobility`. `make postgres` opens psql using
 the configured values. Schemas:
 
-- `metadata`: fetch records (`metadata.fetch_attempt`) and schedule loads
-  (`metadata.schedule_load`);
-- `staging`: schedule versions loaded from the RAW ZIP (`staging.schedule_*`) and
-  vehicle positions (`staging.vehicle_position*`);
+- `metadata`: fetch records (`metadata.fetch_attempt`), the loads of schedules,
+  vehicle positions and trip updates (`metadata.*_load`) and the
+  `metadata.feed_freshness` view;
+- `staging`: schedule versions loaded from the RAW ZIP (`staging.schedule_*`),
+  vehicle positions (`staging.vehicle_position*`) and trip updates
+  (`staging.trip_update*`, `staging.stop_time_update`);
 - `core`: dbt models that join the sources;
 - `marts`: dbt models that answer analytical questions.
 
@@ -213,6 +216,11 @@ Two DAGs start unpaused:
 - `check_freshness` runs `mobility check-freshness` every 5 minutes and fails
   when a feed is stale.
 
+Both DAGs end with a `send_heartbeat` task, which reports a successful run to
+CloudWatch on the AWS host ([deployment guide](aws-deployment.md)). Locally
+`HEARTBEAT_NAMESPACE` is not set, so the task is marked as skipped and the run
+still succeeds.
+
 Task logs are kept in the `airflow_logs` volume and shown in the UI.
 `make check-dags` builds the image and checks that every DAG file imports.
 
@@ -234,9 +242,7 @@ The position models in `core` are incremental tables, so run `make dbt-build`
 after loading to add the new positions. With `make airflow` running, both steps
 run every 30 minutes. After a change to their SQL, rebuild them from staging
 with `dbt build --full-refresh --select vehicle_position_match+` in
-`transform/`. A database built before these models became incremental needs
-this once as well: its tables lack the `built_at` column that an incremental
-build reads. `core.vehicle_position_match` joins each position
+`transform/`. `core.vehicle_position_match` joins each position
 to the schedule version that was the latest archived one when the snapshot was
 first downloaded. Share of positions whose trip was found, per hour:
 
@@ -329,6 +335,25 @@ GROUP BY 1
 ORDER BY 1;
 ```
 
+`marts.trip_coverage` compares both feeds with the trips in
+`core.scheduled_trip`: per route, service date and hour, the scheduled trips,
+those that ran while vehicle positions were collected, and how many of these
+appeared in each feed. The TripUpdates count is empty for hours older than
+the earliest prediction kept. Share of collected trips seen per service date:
+
+```sql
+SELECT service_date,
+       sum(collected_trips) AS collected,
+       round(100.0 * sum(seen_trips) / sum(collected_trips), 1) AS positions_pct,
+       round(100.0 * sum(predicted_trips)
+             / sum(collected_trips) FILTER (WHERE predicted_trips IS NOT NULL), 1)
+           AS predictions_pct
+FROM marts.trip_coverage
+WHERE collected_trips > 0
+GROUP BY 1
+ORDER BY 1;
+```
+
 Staging keeps the trip updates of the last 7 whole UTC days.
 `mobility prune-trip-updates` deletes older snapshots, but only those that the
 prediction periods have been built from. To bring older days back, for example
@@ -365,8 +390,10 @@ Airflow runs this check every 5 minutes.
 ## Database tests
 
 `make test` skips tests marked `integration`. They check the
-`metadata.fetch_attempt` constraints, the `metadata.feed_freshness` view and the
-schedule tables and loading against the running PostgreSQL, inside transactions that are rolled back:
+`metadata.fetch_attempt` constraints, the `metadata.feed_freshness` view, and
+the staging tables and loaders of schedules, vehicle positions and trip
+updates, including pruning and the advisory lock, against the running
+PostgreSQL, inside transactions that are rolled back:
 
 ```bash
 set -a; source .env; set +a
@@ -394,8 +421,8 @@ by `make dbt-build`. The dbt models are covered by unit tests next to them in
 
 ## MinIO lifecycle
 
-MinIO Community is archived and no longer maintained. We retain it only as the
-local S3-compatible learning environment agreed in the project plan. The server
+MinIO Community is archived and no longer maintained. It is kept only as local
+S3-compatible storage; the AWS host uses S3 instead. The server
 is compiled from `RELEASE.2025-10-15T17-29-55Z`, which includes the last published
 security fix, rather than using an older prebuilt server image. This does not make
 the archived release suitable for a new public production deployment.

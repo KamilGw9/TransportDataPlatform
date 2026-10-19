@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-10-18.
+Last updated: 2026-10-19.
 
 Current stage: 6 of the [project plan](project-plan.md), an always-on host in
 AWS. Since 2026-10-15 one EC2 instance collects the feeds, and Airflow on it
@@ -289,8 +289,8 @@ are complete.
 - Sources and URLs are fixed in code; only Mobilis is configured.
 - If the database write fails after an upload, that attempt is not recorded.
 - Ingestion tests use fakes for HTTP and S3; only the database tables, the
-  freshness view and schedule and vehicle position loading are tested against a
-  real database. The dbt models have unit tests, which also need PostgreSQL.
+  freshness view and the loading of schedules, vehicle positions and trip
+  updates are tested against a real database. The dbt models have unit tests, which also need PostgreSQL.
 - MinIO Community is archived upstream and is used here only as local
   S3-compatible storage.
 - The profiling sample is short and does not cover overnight service or daylight

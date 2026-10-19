@@ -3,19 +3,25 @@
 A data platform for Kraków public transport, built on the GTFS schedule and the
 GTFS-Realtime feeds of Mobilis buses (`krakow_ztp_m`). It keeps a history of
 vehicle positions and trip updates, matches them to the schedule, and measures
-how punctual the buses are and how accurate their predicted arrival times are.
+how punctual the buses are, how accurate their predicted arrival times are, and
+how many scheduled trips appear in the realtime feeds.
 
 ## How data flows
 
 Two collectors download the realtime feeds every 30 seconds and the schedule
-every hour, and store each file unchanged in S3-compatible storage (MinIO) under
-a key containing its SHA-256 hash. Every download attempt, including failed
-ones, is recorded in PostgreSQL. Loaders decode the stored files into `staging`
-tables, from which dbt builds the `core` and `marts` models: matching positions
-to scheduled trips, arrivals at stops, route punctuality and prediction
-accuracy. Airflow runs the loaders and the dbt build every 30 minutes and checks
+every hour, and store each file unchanged in S3 under a key containing its
+SHA-256 hash. Every download attempt, including failed ones, is recorded in
+PostgreSQL. Loaders decode the stored files into `staging` tables, from which
+dbt builds the `core` and `marts` models: matching positions to scheduled
+trips, arrivals at stops, route punctuality, prediction accuracy and trip
+coverage. Airflow runs the loaders and the dbt build every 30 minutes and checks
 feed freshness every 5 minutes. Since the original files are kept, staging and
 the models can be rebuilt from the archive.
+
+Everything runs in Docker Compose. Locally, MinIO stands in for S3. Since
+2026-10-15 the same services run on one EC2 instance described in Terraform,
+with RAW in an S3 bucket, and a CloudWatch alarm emails when either Airflow DAG
+stops reporting successful runs.
 
 ## Results so far
 
@@ -47,8 +53,8 @@ and what limits them.
 
 ## Running locally
 
-Requirements: Docker with Compose v2, GNU Make, and uv. The project uses
-Python 3.12.
+Requirements: Docker with Compose v2, GNU Make, a system `python3` for
+`make setup`, and uv. The project uses Python 3.12.
 
 ```bash
 make setup      # create .env with generated passwords
