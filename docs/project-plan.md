@@ -23,9 +23,9 @@ and expose SQL queries and a basic dashboard.
 7. Provide a dashboard for punctuality, predicted delays, coverage, and data
    freshness.
 
-After the first working pipeline, planned additions include Kafka streaming,
-realtime history in ClickHouse, monitoring, and replay from the archive. Weather
-and A/T feeds are later extensions.
+Kafka streaming and realtime history in ClickHouse are candidates for later,
+to be added when a problem in the pipeline needs them. Weather and A/T feeds
+are later extensions.
 
 ## Principles
 
