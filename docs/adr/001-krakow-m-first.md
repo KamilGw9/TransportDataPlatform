@@ -1,6 +1,7 @@
-# 001 — Start with Kraków Mobilis
+# ADR 001: Start with Kraków Mobilis
 
-Status: accepted  
+Status: accepted
+
 Date: 2026-09-27
 
 ## Context

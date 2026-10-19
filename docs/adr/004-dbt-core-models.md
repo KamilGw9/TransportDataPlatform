@@ -1,6 +1,7 @@
 # ADR 004: dbt for models in core
 
-Status: accepted
+Status: accepted; [ADR 005](005-airflow-scheduling.md) and
+[ADR 006](006-bounded-staging-incremental-models.md) replace one point each
 
 Date: 2026-10-05
 
