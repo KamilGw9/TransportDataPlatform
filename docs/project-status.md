@@ -2,11 +2,13 @@
 
 Last updated: 2026-10-26.
 
-Current stage: 6 of the [project plan](project-plan.md), an always-on host in
-AWS. Since 2026-10-15 one EC2 instance collects the feeds, and Airflow on it
-loads vehicle positions and trip updates and rebuilds the models every 30
-minutes and checks feed freshness every 5 minutes, with an email alert when
-either stops succeeding. In its first 11 days, every run of both DAGs
+Current stage: 7 of the [project plan](project-plan.md), the last one: Grafana
+dashboards of punctuality, predictions, coverage and data freshness run on the
+AWS host. Stage 6 moved the pipeline to that host. Since 2026-10-15 one EC2
+instance collects the feeds, and Airflow on it loads vehicle positions and
+trip updates and rebuilds the models every 30 minutes and checks feed
+freshness every 5 minutes, with an email alert when either stops succeeding.
+In its first 11 days, every run of both DAGs
 succeeded and no realtime feed went more than 5 minutes without a download
 attempt, including three interruptions of the Spot instance. Stage 5 delivered
 the scheduled runs. Stage 4 delivered realtime-to-schedule matching, arrivals
@@ -204,6 +206,24 @@ are complete.
   after the last heartbeat, plus the time CloudWatch takes to evaluate it. The
   schedule collector has no alarm. Both alarms have been `OK` since
   2026-10-15; a stale feed or a failed run has not raised one yet.
+- Dashboards: `make dashboard` starts Grafana 13 on `127.0.0.1:3000`, on the
+  host reached through an SSM port forwarding session
+  ([ADR 009](adr/009-grafana-dashboard.md)). It reads the marts, the fetch
+  records and the freshness view as a `dashboard` role that cannot read
+  staging or `core` or write anything; dbt grants it the marts on each build.
+  `Data freshness` shows the age of the last change of each realtime feed
+  against the 5-minute threshold of `check-freshness`, the last schedule
+  download, the last punctuality build, and fetch attempts and failures per
+  hour. `Punctuality and predictions` shows, for chosen routes and service
+  dates, the arrivals on time by date and service hour, the predictions within
+  1 minute by horizon against the schedule, the scheduled trips seen in each
+  realtime feed and a table of routes. On the host on 2026-10-26, for the
+  service dates from 2026-10-20, 64.3% of 167,912 arrivals were on time,
+  predictions made 5 minutes before were within 1 minute in 68.7% of cases
+  against 34.5% for the schedule, and 99.7% of the trips that ran while
+  positions were collected appeared in them. The data source and dashboards
+  are provisioned from files, and every panel query was checked through the
+  Grafana API as the `dashboard` role.
 - Feed profiler with [A/M/T reports](../tools/feed_profiler/data-profile.md),
   which led to starting with Mobilis buses
   ([ADR 001](adr/001-krakow-m-first.md)).
@@ -280,10 +300,12 @@ are complete.
   space of deleted rows but does not return it to the disk. The first load of
   a backlog of several days can exceed the 10-minute task limit in Airflow.
 - Every build of the prediction periods reads all of staging to select the
-  hours to recompute, about 10 s for 15 million rows. With memory limited as
-  on a 2 GB host, the prediction periods took 77 s of a 117 s build on
-  2026-10-11, with 15.6 million rows in staging; at the expected 7 GB of
-  staging this has not been measured. A period that ends at the
+  hours to recompute. On the host, the `dbt_build` task of `refresh_models`
+  grew by about a minute a day while staging filled up, and has taken 6.7 to
+  6.9 minutes on average since the window filled on 2026-10-23, at most 7.8;
+  in the last build, the prediction periods took 329 s and their uniqueness
+  test 66 s. The task is stopped after 10 minutes, so the margin is 2 to 3
+  minutes. A period that ends at the
   newest snapshot is taken to last 2 minutes past it until its hour is
   recomputed. A mistake in choosing the hours would leave stale rows; in the
   prediction periods `--full-refresh` repairs them, in the arrival predictions
@@ -335,6 +357,7 @@ are complete.
 
 ## Next
 
-Stage 7, a dashboard for punctuality, predicted delays, coverage and data
-freshness. The validation of the source data and the trips that never appear
-in the realtime feeds are still open.
+Make the prediction periods select the hours to recompute from new snapshots
+only, so that `dbt_build` stays well within its time limit. The validation of
+the source data and the trips that never appear in the realtime feeds are
+still open.
