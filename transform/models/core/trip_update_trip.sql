@@ -31,7 +31,7 @@ WITH new_period AS (
     {%- if is_incremental() %}
     WHERE last_snapshot_id > (SELECT coalesce(max(last_snapshot_id), 0) FROM {{ this }})
         OR scheduled_arrival >= (
-            SELECT {{ service_day_start('max(service_date) + 1') }} FROM {{ this }}
+            SELECT {{ scheduled_time('max(service_date) + 1', 0) }} FROM {{ this }}
         )
     {%- endif %}
 )

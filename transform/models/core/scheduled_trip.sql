@@ -42,7 +42,7 @@ known_until AS (
 new_date AS (
     SELECT DISTINCT
         service_date,
-        {{ service_day_start('service_date') }} AS service_day_start
+        {{ scheduled_time('service_date', 0) }} AS service_day_start
     FROM {{ ref('service_date') }}
     {%- if is_incremental() %}
     WHERE service_date > (SELECT coalesce(max(service_date), '-infinity') FROM {{ this }})
@@ -75,9 +75,9 @@ SELECT
     date_version.schedule_sha256,
     trip.trip_id,
     trip.route_id,
-    date_version.service_day_start + trip_window.start_seconds * interval '1 second'
+    {{ scheduled_time('date_version.service_date', 'trip_window.start_seconds') }}
         AS trip_start,
-    date_version.service_day_start + trip_window.end_seconds * interval '1 second'
+    {{ scheduled_time('date_version.service_date', 'trip_window.end_seconds') }}
         AS trip_end
 FROM date_version
 JOIN {{ ref('service_date') }} AS service_date

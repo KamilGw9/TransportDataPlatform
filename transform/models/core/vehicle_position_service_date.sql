@@ -66,7 +66,6 @@ candidate AS (
     SELECT
         position.*,
         service_date.service_date,
-        {{ service_day_start('service_date.service_date') }} AS service_day_start,
         trip_window.start_seconds,
         trip_window.end_seconds
     FROM position
@@ -86,8 +85,8 @@ candidate AS (
 trip_instance AS (
     SELECT
         *,
-        service_day_start + start_seconds * interval '1 second' AS trip_start,
-        service_day_start + end_seconds * interval '1 second' AS trip_end
+        {{ scheduled_time('service_date', 'start_seconds') }} AS trip_start,
+        {{ scheduled_time('service_date', 'end_seconds') }} AS trip_end
     FROM candidate
 )
 SELECT DISTINCT ON (snapshot_sha256, entity_id)

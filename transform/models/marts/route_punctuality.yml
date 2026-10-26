@@ -15,6 +15,8 @@ unit_tests:
           - {schedule_sha256: v1, trip_id: day, service_date: "2026-10-05", stop_sequence: 5, scheduled_arrival: "2026-10-05 08:15:00+00", min_delay_seconds: 0, max_delay_seconds: 30}
           # 00:30 local on 2026-10-06, on the trip of the 2026-10-05 service.
           - {schedule_sha256: v1, trip_id: night, service_date: "2026-10-05", stop_sequence: 2, scheduled_arrival: "2026-10-05 22:30:00+00", min_delay_seconds: 0, max_delay_seconds: 30}
+          # The second 02:30 on 2026-10-25, after the clocks went back.
+          - {schedule_sha256: v1, trip_id: night, service_date: "2026-10-24", stop_sequence: 2, scheduled_arrival: "2026-10-25 01:30:00+00", min_delay_seconds: 0, max_delay_seconds: 30}
       - input: source('staging', 'schedule_trip')
         rows:
           - {schedule_sha256: v1, trip_id: day, route_id: r143}
@@ -27,6 +29,7 @@ unit_tests:
       rows:
         - {route_short_name: "143", service_date: "2026-10-05", service_hour: 10, arrivals: 4, early_arrivals: 1, on_time_arrivals: 2, late_arrivals: 1, median_delay_seconds: 30}
         - {route_short_name: "601", service_date: "2026-10-05", service_hour: 24, arrivals: 1, early_arrivals: 0, on_time_arrivals: 1, late_arrivals: 0, median_delay_seconds: 15}
+        - {route_short_name: "601", service_date: "2026-10-24", service_hour: 26, arrivals: 1, early_arrivals: 0, on_time_arrivals: 1, late_arrivals: 0, median_delay_seconds: 15}
 
   - name: later_build_recomputes_service_dates_with_recomputed_arrivals
     model: route_punctuality

@@ -23,3 +23,24 @@ unit_tests:
         - {trip_id: t1, stop_sequence: 3, scheduled_arrival: "2026-10-05 10:05:00+00", min_delay_seconds: -70, max_delay_seconds: -40}
         - {trip_id: t1, stop_sequence: 9, scheduled_arrival: null, min_delay_seconds: null, max_delay_seconds: null}
         - {trip_id: night, stop_sequence: 2, scheduled_arrival: "2026-10-05 22:30:00+00", min_delay_seconds: 30, max_delay_seconds: 60}
+
+  - name: scheduled_time_follows_the_clock_when_it_goes_back
+    model: stop_arrival_delay
+    description: >
+      The clocks went back from 03:00 to 02:00 on 2026-10-25. Mobilis and its
+      buses kept to the clock: a stop at 26:30 on the 2026-10-24 service was
+      served at the second 02:30 and one at 27:30 at 03:30 UTC+1, an hour after
+      the noon-minus-12-hours rule of GTFS would place them.
+    given:
+      - input: ref('stop_arrival')
+        rows:
+          - {schedule_sha256: v1, trip_id: night, service_date: "2026-10-24", stop_sequence: 2, arrived_after: "2026-10-25 01:30:30+00", arrived_by: "2026-10-25 01:31:00+00"}
+          - {schedule_sha256: v1, trip_id: night, service_date: "2026-10-24", stop_sequence: 3, arrived_after: "2026-10-25 02:30:30+00", arrived_by: "2026-10-25 02:31:00+00"}
+      - input: source('staging', 'schedule_stop_time')
+        rows:
+          - {schedule_sha256: v1, trip_id: night, stop_sequence: 2, arrival_seconds: 95400}
+          - {schedule_sha256: v1, trip_id: night, stop_sequence: 3, arrival_seconds: 99000}
+    expect:
+      rows:
+        - {stop_sequence: 2, scheduled_arrival: "2026-10-25 01:30:00+00", min_delay_seconds: 30, max_delay_seconds: 60}
+        - {stop_sequence: 3, scheduled_arrival: "2026-10-25 02:30:00+00", min_delay_seconds: 30, max_delay_seconds: 60}
