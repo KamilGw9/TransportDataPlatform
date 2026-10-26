@@ -144,6 +144,9 @@ aws ssm start-session --target "$(terraform output -raw host_instance_id)" \
   --parameters portNumber=8080,localPortNumber=8080
 ```
 
+Grafana is reached the same way with `portNumber=3000`. If Grafana also runs on
+the laptop, `localPortNumber=3001` keeps the two apart.
+
 ## Update
 
 ```bash

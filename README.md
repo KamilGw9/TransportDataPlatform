@@ -21,18 +21,21 @@ the models can be rebuilt from the archive.
 Everything runs in Docker Compose. Locally, MinIO stands in for S3. Since
 2026-10-15 the same services run on one EC2 instance described in Terraform,
 with RAW in an S3 bucket, and a CloudWatch alarm emails when either Airflow DAG
-stops reporting successful runs.
+stops reporting successful runs. Grafana shows the marts and the freshness of
+the data on two dashboards, provisioned from files in the repository.
 
 ## Results so far
 
-The data was collected in the first week of October 2026, mostly in the
-afternoons and evenings, because collection stopped while the laptop slept. Of
-18,233 arrivals, 59% were on time (from 1 minute early to 3 minutes late) and
-40% late. Predictions made 1 minute before an arrival were within a minute of it
-in 89% of cases, and those made 15 minutes before in 41%, while the scheduled
-time was within a minute in 29%. The figures say nothing about mornings or
-nights; [project status](docs/project-status.md) describes how they are computed
+On the service dates from 2026-10-20 to 2026-10-26, the last one up to the
+afternoon, collected on the AWS host day and night, 64% of 167,912 arrivals
+were on time (from 1 minute early to 3 minutes late). Predictions made 1 minute
+before an arrival were within a minute of it in 89% of cases, and those made 15
+minutes before in 45%, while the scheduled time was within a minute in 34%.
+99.7% of the scheduled trips appeared in the vehicle positions.
+[Project status](docs/project-status.md) describes how the figures are computed
 and what limits them.
+
+![The punctuality and predictions dashboard for 2026-10-20 to 2026-10-26](docs/images/punctuality-and-predictions.png)
 
 ## Documentation
 
@@ -46,7 +49,9 @@ and what limits them.
   [dbt for core models](docs/adr/004-dbt-core-models.md),
   [Airflow scheduling](docs/adr/005-airflow-scheduling.md),
   [bounded staging and incremental models](docs/adr/006-bounded-staging-incremental-models.md),
-  [AWS hosting](docs/adr/007-aws-hosting.md)
+  [AWS hosting](docs/adr/007-aws-hosting.md),
+  [scheduled times on the clock](docs/adr/008-scheduled-times-on-the-clock.md),
+  [Grafana dashboards](docs/adr/009-grafana-dashboard.md)
 - [Feed profiler](tools/feed_profiler/README.md) and its
   [findings](tools/feed_profiler/data-profile.md), from the study that preceded
   the pipeline
@@ -61,11 +66,13 @@ make setup      # create .env with generated passwords
 make up         # PostgreSQL, MinIO, bucket and migrations
 make collect    # collect GTFS-RT every 30 s and the schedule hourly
 make airflow    # load data and rebuild models every 30 minutes
+make dashboard  # Grafana with the dashboards
 ```
 
 PostgreSQL is available at `127.0.0.1:5432`, the S3 endpoint at
-`http://127.0.0.1:9000` with a console at `http://127.0.0.1:9001`, and the
-Airflow UI at `http://127.0.0.1:8080`. Credentials are in the ignored `.env`.
+`http://127.0.0.1:9000` with a console at `http://127.0.0.1:9001`, the
+Airflow UI at `http://127.0.0.1:8080` and Grafana at `http://127.0.0.1:3000`.
+Credentials are in the ignored `.env`.
 `make down` stops everything and keeps the database and object volumes. The
 first MinIO source build takes several minutes.
 

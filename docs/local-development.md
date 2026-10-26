@@ -45,9 +45,10 @@ changing that name selects different volumes rather than moving existing data.
 | S3 API | `http://127.0.0.1:9000` | `http://minio:9000` |
 | MinIO console | `http://127.0.0.1:9001` | `http://minio:9001` |
 | Airflow UI | `http://127.0.0.1:8080` | `http://airflow-api-server:8080` |
+| Grafana | `http://127.0.0.1:3000` | `http://grafana:3000` |
 
 Host ports can be changed with `POSTGRES_PORT`, `MINIO_API_PORT`,
-`MINIO_CONSOLE_PORT` and `AIRFLOW_PORT` in `.env`; internal ports stay the same. Host ports bind only
+`MINIO_CONSOLE_PORT`, `AIRFLOW_PORT` and `GRAFANA_PORT` in `.env`; internal ports stay the same. Host ports bind only
 to loopback. Use local `.env` values for credentials; do not paste them into logs.
 
 PostgreSQL defaults to database/user `mobility`. `make postgres` opens psql using
@@ -223,6 +224,25 @@ still succeeds.
 
 Task logs are kept in the `airflow_logs` volume and shown in the UI.
 `make check-dags` builds the image and checks that every DAG file imports.
+
+## Dashboards
+
+```bash
+make dashboard
+```
+
+`make dashboard` runs `make up` and starts Grafana at `http://127.0.0.1:3000`,
+without a login, as the Airflow UI. Before it starts, `grafana-init` lets the
+`dashboard` role from migration 009 log in with `DASHBOARD_DB_PASSWORD` from
+`.env`. The role reads only the marts and the fetch records, and dbt grants it
+the marts on every build, so the punctuality dashboard stays empty until the
+first `dbt build` after the migration.
+
+The data source and the dashboards `Data freshness` and `Punctuality and
+predictions` are provisioned from `infrastructure/docker/grafana/`. A change
+made in the UI cannot be saved; edit the JSON files instead and restart the
+service with `docker compose restart grafana`
+([ADR 009](adr/009-grafana-dashboard.md)).
 
 ## Load vehicle positions and match them to the schedule
 
