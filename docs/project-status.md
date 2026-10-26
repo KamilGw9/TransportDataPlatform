@@ -1,13 +1,14 @@
 # Project status
 
-Last updated: 2026-10-19.
+Last updated: 2026-10-26.
 
 Current stage: 6 of the [project plan](project-plan.md), an always-on host in
 AWS. Since 2026-10-15 one EC2 instance collects the feeds, and Airflow on it
 loads vehicle positions and trip updates and rebuilds the models every 30
 minutes and checks feed freshness every 5 minutes, with an email alert when
-either stops succeeding. In its first day, including the night, no realtime
-feed went more than 2 minutes without a download attempt. Stage 5 delivered
+either stops succeeding. In its first 11 days, every run of both DAGs
+succeeded and no realtime feed went more than 5 minutes without a download
+attempt, including three interruptions of the Spot instance. Stage 5 delivered
 the scheduled runs. Stage 4 delivered realtime-to-schedule matching, arrivals
 at stops, route punctuality and the accuracy of TripUpdates predictions;
 validation of the source data from that stage is not started. Stages 1 to 3
@@ -93,9 +94,11 @@ are complete.
   `core.vehicle_position_service_date` gives each matched position the service
   date whose scheduled trip lies nearest to the position time, choosing between
   the local date and the days before and after, with the scheduled start and end
-  of that trip. Service days start at noon minus 12 hours in Europe/Warsaw, as
-  GTFS defines them, so trips keep their clock times when daylight saving time
-  ends. All 180,934 matched positions got a service date; 67% lie within the
+  of that trip. Stop times are taken as clock times of the service date in
+  Europe/Warsaw, as Mobilis keeps them, not counted from noon minus 12 hours as
+  GTFS defines them; the two differ only on the nights the clocks change
+  ([ADR 008](adr/008-scheduled-times-on-the-clock.md)). All 180,934 matched
+  positions got a service date; 67% lie within the
   scheduled time of their trip, and 99% of the rest within 30 minutes of it.
 - Arrivals: `core.stop_arrival` estimates an arrival when a vehicle is first
   seen stopped at a stop that it had not reached in its previous observation.
@@ -184,7 +187,12 @@ are complete.
   in the same collector cycle, and every position matched a trip before and
   after it. Positions of the night trips after midnight got the previous
   service date, and their arrivals the service hours 24 to 27, as in the
-  schedule.
+  schedule. AWS interrupted the Spot instance on 2026-10-22, 2026-10-24 and
+  2026-10-26 and started it again 2 to 5 minutes later; the services started
+  by themselves, and no gap was long enough to raise an alarm. When the clocks
+  went back on 2026-10-25, the 14 arrivals of the night trips after 02:00 came
+  out about an hour late against the noon-minus-12-hours rule, which led to
+  ADR 008.
 - Alerts: after a successful run, `check_freshness` and `refresh_models` send a
   heartbeat metric to CloudWatch (`mobility send-heartbeat`). A CloudWatch
   alarm for each emails the `alert_email` address in Terraform when three
@@ -205,11 +213,12 @@ are complete.
   changed for 5 minutes, so the email comes 15 to 25 minutes after it stops
   changing; a failed model refresh is reported 60 to 90 minutes after the last
   successful one.
-- About 1% of realtime downloads on the host fail on the Mobilis side, half
-  with 404 for the feed URL and half with an incomplete or undecodable
-  message. A failed download is not retried; the next collector cycle starts
-  30 s after the previous one started. In the first day, none failed twice in
-  a row.
+- From 2026-10-15 to 2026-10-26, 1.9% of TripUpdates downloads on the host
+  failed, 1.5% of VehiclePositions and 0.6% of ServiceAlerts. In the first
+  day, half of the failures were 404 for the feed URL and half an incomplete
+  or undecodable message, and none failed twice in a row. A failed download is
+  not retried; the next collector cycle starts 30 s after the previous one
+  started.
 - Freshness is judged by changes of the content hash. The GTFS-RT header
   timestamp is stored only for VehiclePositions loaded into staging; on those,
   a snapshot reached the collector a median of 8 s after it was generated.
@@ -227,6 +236,10 @@ are complete.
   alarm, but a gap shorter than about 20 minutes raises nothing, and nothing
   lists past gaps. Airflow stops with its host too: missed runs are not
   repeated, and the next run loads everything collected since.
+- Stop times on the clock are checked on one night when the clocks went back.
+  When they go forward, on 2027-03-28, a time between 02:00 and 03:00 does not
+  exist; the models move it an hour forward, and whether Mobilis does the same
+  is not known.
 - Mobilis does not send `start_date` in trip descriptors, so the service date is
   inferred from the schedule. Matching uses the schedule version known at
   download time, not the version that applies on the service date. The time zone
@@ -317,6 +330,7 @@ are complete.
 
 ## Next
 
-Collect on the AWS host for at least a week, including nights, then measure
-the service date inference across midnight and validate the source data. Look
-into the trips that never appear in the realtime feeds.
+Deploy the stop times of ADR 008 to the AWS host and rebuild the models of
+the night of 2026-10-24. Then stage 7, a dashboard for punctuality, predicted
+delays, coverage and data freshness. The validation of the source data and the
+trips that never appear in the realtime feeds are still open.

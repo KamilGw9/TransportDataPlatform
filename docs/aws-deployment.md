@@ -164,7 +164,9 @@ aws ec2 start-instances --instance-ids <host_instance_id>
 ```
 
 Stopping the instance disables its Spot request, so AWS does not start it again
-by itself. A start sent within about a minute of the stop fails with
+by itself. An interruption by AWS also stops it, but leaves the request active,
+and AWS starts the instance again once it has capacity; the three
+interruptions by 2026-10-26 each lasted 2 to 5 minutes. A start sent within about a minute of the stop fails with
 `IncorrectSpotRequestState`. After a start, every service starts again through
 `restart: unless-stopped` and collection resumes. A stopped instance costs only
 its volumes and snapshots, and sends no heartbeats, so both alarms fire while it
