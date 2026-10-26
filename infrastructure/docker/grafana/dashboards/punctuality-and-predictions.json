@@ -1,0 +1,234 @@
+{
+  "uid": "punctuality-and-predictions",
+  "title": "Punctuality and predictions",
+  "description": "Mobilis buses: arrivals against the schedule, TripUpdates predictions against arrivals, and scheduled trips seen in the realtime feeds. The time range selects service dates.",
+  "schemaVersion": 41,
+  "time": { "from": "now-7d", "to": "now" },
+  "refresh": "30m",
+  "templating": {
+    "list": [
+      {
+        "type": "query",
+        "name": "route",
+        "label": "Route",
+        "datasource": { "type": "grafana-postgresql-datasource", "uid": "mobility" },
+        "query": "SELECT DISTINCT route_short_name FROM marts.route_punctuality WHERE $__timeFilter(service_date) ORDER BY 1",
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "current": { "text": "All", "value": "$__all" },
+        "sort": 3
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Arrivals on time",
+      "description": "From 1 minute early to 3 minutes late, judged by the middle of the arrival window.",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "mobility" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true,
+          "rawSql": "SELECT sum(on_time_arrivals)::numeric / nullif(sum(arrivals), 0) AS on_time\nFROM marts.route_punctuality\nWHERE $__timeFilter(service_date)\n    AND route_short_name IN (${route:sqlstring})"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "decimals": 1 } },
+      "options": { "graphMode": "none" }
+    },
+    {
+      "type": "stat",
+      "title": "Arrivals",
+      "description": "First arrivals at each stop of a trip, within 50 m of the stop and with a window of at most 60 s.",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "mobility" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true,
+          "rawSql": "SELECT sum(arrivals) AS arrivals\nFROM marts.route_punctuality\nWHERE $__timeFilter(service_date)\n    AND route_short_name IN (${route:sqlstring})"
+        }
+      ],
+      "options": { "graphMode": "none" }
+    },
+    {
+      "type": "stat",
+      "title": "Predictions within 1 minute, made 5 minutes before",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "mobility" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true,
+          "rawSql": "SELECT sum(accurate_predictions)::numeric / nullif(sum(predicted_arrivals), 0) AS accurate\nFROM marts.prediction_accuracy\nWHERE $__timeFilter(service_date)\n    AND route_short_name IN (${route:sqlstring})\n    AND horizon_minutes = 5"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "decimals": 1 } },
+      "options": { "graphMode": "none" }
+    },
+    {
+      "type": "stat",
+      "title": "Trips seen in vehicle positions",
+      "description": "Scheduled trips that ran while VehiclePositions was collected.",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "mobility" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true,
+          "rawSql": "SELECT sum(seen_trips)::numeric / nullif(sum(collected_trips), 0) AS seen\nFROM marts.trip_coverage\nWHERE $__timeFilter(service_date)\n    AND route_short_name IN (${route:sqlstring})"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "decimals": 1 } },
+      "options": { "graphMode": "none" }
+    },
+    {
+      "type": "timeseries",
+      "title": "Arrivals by service date",
+      "gridPos": { "x": 0, "y": 5, "w": 12, "h": 9 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "mobility" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "editorMode": "code",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    service_date::timestamp AT TIME ZONE 'Europe/Warsaw' AS time,\n    sum(on_time_arrivals)::numeric / sum(arrivals) AS \"on time\",\n    sum(late_arrivals)::numeric / sum(arrivals) AS late,\n    sum(early_arrivals)::numeric / sum(arrivals) AS early\nFROM marts.route_punctuality\nWHERE $__timeFilter(service_date)\n    AND route_short_name IN (${route:sqlstring})\nGROUP BY service_date\nORDER BY service_date"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "custom": { "drawStyle": "bars", "fillOpacity": 80, "stacking": { "mode": "normal" } }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "on time" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "late" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "early" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } }]
+          }
+        ]
+      }
+    },
+    {
+      "type": "barchart",
+      "title": "Arrivals on time by service hour",
+      "description": "Hours past 24 belong to the night trips of the previous service date.",
+      "gridPos": { "x": 12, "y": 5, "w": 12, "h": 9 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "mobility" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    lpad(service_hour::text, 2, '0') AS hour,\n    sum(on_time_arrivals)::numeric / sum(arrivals) AS \"on time\"\nFROM marts.route_punctuality\nWHERE $__timeFilter(service_date)\n    AND route_short_name IN (${route:sqlstring})\nGROUP BY service_hour\nORDER BY service_hour"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "min": 0, "max": 1, "color": { "mode": "fixed", "fixedColor": "green" } }
+      },
+      "options": { "xField": "hour", "showValue": "never", "legend": { "showLegend": false } }
+    },
+    {
+      "type": "barchart",
+      "title": "Within 1 minute of the arrival, by horizon",
+      "description": "The prediction in force that many minutes before the arrival, against the scheduled time, on the same arrivals.",
+      "gridPos": { "x": 0, "y": 14, "w": 12, "h": 9 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "mobility" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    horizon_minutes || ' min' AS horizon,\n    sum(accurate_predictions)::numeric / nullif(sum(predicted_arrivals), 0) AS prediction,\n    sum(accurate_schedule_times)::numeric / nullif(sum(predicted_arrivals), 0) AS schedule\nFROM marts.prediction_accuracy\nWHERE $__timeFilter(service_date)\n    AND route_short_name IN (${route:sqlstring})\nGROUP BY horizon_minutes\nORDER BY horizon_minutes"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "min": 0, "max": 1 },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "schedule" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "text" } }]
+          }
+        ]
+      },
+      "options": { "xField": "horizon", "showValue": "auto" }
+    },
+    {
+      "type": "timeseries",
+      "title": "Scheduled trips seen in the realtime feeds",
+      "description": "Share of the trips that ran while VehiclePositions was collected. TripUpdates is left out for hours older than the predictions kept.",
+      "gridPos": { "x": 12, "y": 14, "w": 12, "h": 9 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "mobility" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "editorMode": "code",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    service_date::timestamp AT TIME ZONE 'Europe/Warsaw' AS time,\n    sum(seen_trips)::numeric / nullif(sum(collected_trips), 0) AS \"vehicle positions\",\n    sum(predicted_trips)::numeric\n        / nullif(sum(collected_trips) FILTER (WHERE predicted_trips IS NOT NULL), 0)\n        AS \"trip updates\"\nFROM marts.trip_coverage\nWHERE $__timeFilter(service_date)\n    AND route_short_name IN (${route:sqlstring})\nGROUP BY service_date\nORDER BY service_date"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "max": 1, "custom": { "showPoints": "always" } }
+      }
+    },
+    {
+      "type": "table",
+      "title": "Routes",
+      "gridPos": { "x": 0, "y": 23, "w": 24, "h": 10 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "mobility" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    route_short_name AS route,\n    sum(arrivals) AS arrivals,\n    sum(on_time_arrivals)::numeric / sum(arrivals) AS \"on time\",\n    sum(late_arrivals)::numeric / sum(arrivals) AS late,\n    sum(early_arrivals)::numeric / sum(arrivals) AS early\nFROM marts.route_punctuality\nWHERE $__timeFilter(service_date)\n    AND route_short_name IN (${route:sqlstring})\nGROUP BY route_short_name\nORDER BY arrivals DESC"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": { "id": "byRegexp", "options": "on time|late|early" },
+            "properties": [
+              { "id": "unit", "value": "percentunit" },
+              { "id": "decimals", "value": 1 }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "on time" },
+            "properties": [
+              { "id": "custom.cellOptions", "value": { "type": "gauge", "mode": "basic" } },
+              { "id": "min", "value": 0 },
+              { "id": "max", "value": 1 },
+              { "id": "color", "value": { "mode": "continuous-RdYlGr" } }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
