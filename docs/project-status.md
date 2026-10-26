@@ -192,7 +192,9 @@ are complete.
   by themselves, and no gap was long enough to raise an alarm. When the clocks
   went back on 2026-10-25, the 14 arrivals of the night trips after 02:00 came
   out about an hour late against the noon-minus-12-hours rule, which led to
-  ADR 008.
+  ADR 008. After it was deployed on 2026-10-26 and the models of that night
+  rebuilt, all 14 were on time, with route medians of -13 and -21 s, and each
+  had a prediction 1 minute before it.
 - Alerts: after a successful run, `check_freshness` and `refresh_models` send a
   heartbeat metric to CloudWatch (`mobility send-heartbeat`). A CloudWatch
   alarm for each emails the `alert_email` address in Terraform when three
@@ -326,11 +328,13 @@ are complete.
   it from RAW brings them back. `core.trip_update_trip` ignores
   `--full-refresh`, as it keeps more than staging, so if a rebuild of
   `core.scheduled_trip` gives a date another schedule version, the trips of
-  that date have to be reloaded from RAW too.
+  that date have to be reloaded from RAW too. For the same reason, the 4 night
+  trips of 2026-10-24 after the clocks went back appear in VehiclePositions
+  but not in TripUpdates: their predictions were dated before ADR 008, and
+  were not reloaded.
 
 ## Next
 
-Deploy the stop times of ADR 008 to the AWS host and rebuild the models of
-the night of 2026-10-24. Then stage 7, a dashboard for punctuality, predicted
-delays, coverage and data freshness. The validation of the source data and the
-trips that never appear in the realtime feeds are still open.
+Stage 7, a dashboard for punctuality, predicted delays, coverage and data
+freshness. The validation of the source data and the trips that never appear
+in the realtime feeds are still open.
