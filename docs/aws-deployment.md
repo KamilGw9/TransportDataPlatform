@@ -149,12 +149,16 @@ aws ssm start-session --target "$(terraform output -raw host_instance_id)" \
 ```bash
 cd /data/urban-mobility
 git pull
+make setup
 make collect
 make airflow
+make dashboard
 ```
 
-`make up`, which both run first, applies new migrations; `--build` rebuilds the
-images with the new code, DAGs and dbt models.
+`make setup` adds settings that are new in `.env.example` and generates their
+passwords; Compose refuses to start any service while one is missing. `make
+up`, which the others run first, applies new migrations; `--build` rebuilds
+the images with the new code, DAGs and dbt models.
 
 ## Stop and start
 

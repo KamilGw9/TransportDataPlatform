@@ -1,0 +1,155 @@
+{
+  "uid": "data-freshness",
+  "title": "Data freshness",
+  "description": "Whether the collectors and the model builds keep up, from metadata.fetch_attempt and marts.route_punctuality.",
+  "schemaVersion": 41,
+  "time": { "from": "now-24h", "to": "now" },
+  "refresh": "1m",
+  "panels": [
+    {
+      "type": "table",
+      "title": "Realtime feeds",
+      "description": "check-freshness fails a feed whose content has not changed for 5 minutes.",
+      "gridPos": { "x": 0, "y": 0, "w": 16, "h": 6 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "mobility" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    source_id AS feed,\n    last_attempt_at AS \"last attempt\",\n    last_success_at AS \"last download\",\n    last_change_at AS \"last change\",\n    extract(epoch FROM now() - last_change_at) / 60 AS \"minutes since change\"\nFROM metadata.feed_freshness\nWHERE source_id <> 'krakow_ztp_m'\nORDER BY source_id"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "minutes since change" },
+            "properties": [
+              { "id": "decimals", "value": 1 },
+              { "id": "custom.cellOptions", "value": { "type": "color-background" } },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "color": "green", "value": null },
+                    { "color": "red", "value": 5 }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Schedule last downloaded",
+      "description": "The schedule collector runs every hour.",
+      "gridPos": { "x": 16, "y": 0, "w": 4, "h": 6 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "mobility" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true,
+          "rawSql": "SELECT extract(epoch FROM now() - last_success_at) AS age\nFROM metadata.feed_freshness\nWHERE source_id = 'krakow_ztp_m'"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 7200 }
+            ]
+          }
+        }
+      },
+      "options": { "colorMode": "background", "graphMode": "none" }
+    },
+    {
+      "type": "stat",
+      "title": "Punctuality last updated",
+      "description": "refresh_models rebuilds the models every 30 minutes.",
+      "gridPos": { "x": 20, "y": 0, "w": 4, "h": 6 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "mobility" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true,
+          "rawSql": "SELECT extract(epoch FROM now() - max(built_at)) AS age\nFROM marts.route_punctuality"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 3600 }
+            ]
+          }
+        }
+      },
+      "options": { "colorMode": "background", "graphMode": "none" }
+    },
+    {
+      "type": "timeseries",
+      "title": "Fetch attempts per hour",
+      "gridPos": { "x": 0, "y": 6, "w": 12, "h": 9 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "mobility" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "editorMode": "code",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    $__timeGroupAlias(fetched_at, 1h),\n    status AS metric,\n    count(*) AS value\nFROM metadata.fetch_attempt\nWHERE $__timeFilter(fetched_at)\nGROUP BY 1, 2\nORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "bars", "fillOpacity": 80, "stacking": { "mode": "normal" } }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "failed" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }]
+          }
+        ]
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Failed downloads per hour",
+      "description": "A failed download is not retried; the next one starts 30 s after the previous one.",
+      "gridPos": { "x": 12, "y": 6, "w": 12, "h": 9 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "mobility" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "editorMode": "code",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    $__timeGroupAlias(fetched_at, 1h),\n    source_id AS metric,\n    count(*) FILTER (WHERE status = 'failed') AS value\nFROM metadata.fetch_attempt\nWHERE $__timeFilter(fetched_at)\nGROUP BY 1, 2\nORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "bars", "fillOpacity": 80 }
+        }
+      }
+    }
+  ]
+}

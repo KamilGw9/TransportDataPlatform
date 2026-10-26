@@ -169,6 +169,54 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
+  grafana-init:
+    image: postgres:17.11-bookworm@sha256:639ab7ceb90e13123085b741fb31ef493fba25463002f6da665352e7b534b652
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Run make setup}
+      POSTGRES_USER: ${POSTGRES_USER:?Run make setup}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run make setup}
+      DASHBOARD_DB_PASSWORD: ${DASHBOARD_DB_PASSWORD:?Run make setup}
+    volumes:
+      - ./infrastructure/docker/grafana/init.sh:/init.sh:ro
+    entrypoint: ["sh", "/init.sh"]
+
+  grafana:
+    image: grafana/grafana:13.2.4@sha256:dbbc38ea21103cefb50396340cd88afec779c7e070b0a7bf5a75b4ce46651d3f
+    restart: unless-stopped
+    depends_on:
+      grafana-init:
+        condition: service_completed_successfully
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Run make setup}
+      DASHBOARD_DB_PASSWORD: ${DASHBOARD_DB_PASSWORD:?Run make setup}
+      # The UI listens only on the loopback address and has one user, as
+      # Airflow's does, so every visitor is an admin without logging in.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - ./infrastructure/docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infrastructure/docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
 volumes:
   postgres_data:
   minio_data:

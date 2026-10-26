@@ -9,3 +9,6 @@ models:
   mobility:
     marts:
       +schema: marts
+      # Grafana reads the marts as this role (ADR 009).
+      +grants:
+        select: ["dashboard"]

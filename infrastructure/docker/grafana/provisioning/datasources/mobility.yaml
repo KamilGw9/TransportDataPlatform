@@ -1,0 +1,16 @@
+apiVersion: 1
+
+datasources:
+  - name: mobility
+    uid: mobility
+    type: grafana-postgresql-datasource
+    url: postgres:5432
+    user: dashboard
+    isDefault: true
+    editable: false
+    jsonData:
+      database: $POSTGRES_DB
+      sslmode: disable
+      postgresVersion: 1700
+    secureJsonData:
+      password: $DASHBOARD_DB_PASSWORD

@@ -5,7 +5,12 @@ import re
 import secrets
 from pathlib import Path
 
-PASSWORD_KEYS = {"POSTGRES_PASSWORD", "MINIO_ROOT_PASSWORD", "AIRFLOW_JWT_SECRET"}
+PASSWORD_KEYS = {
+    "POSTGRES_PASSWORD",
+    "MINIO_ROOT_PASSWORD",
+    "AIRFLOW_JWT_SECRET",
+    "DASHBOARD_DB_PASSWORD",
+}
 
 
 def prepare_env(root: Path) -> None:
