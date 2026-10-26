@@ -4,8 +4,8 @@
 WITH arrival AS (
     SELECT
         arrival.*,
-        {{ service_day_start('arrival.service_date') }}
-            + stop_time.arrival_seconds * interval '1 second' AS scheduled_arrival
+        {{ scheduled_time('arrival.service_date', 'stop_time.arrival_seconds') }}
+            AS scheduled_arrival
     FROM {{ ref('stop_arrival') }} AS arrival
     LEFT JOIN {{ source('staging', 'schedule_stop_time') }} AS stop_time
         USING (schedule_sha256, trip_id, stop_sequence)

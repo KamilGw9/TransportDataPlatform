@@ -23,8 +23,7 @@ SELECT
     route.route_short_name,
     arrival.service_date,
     -- Hours past 24 belong to trips after midnight, as in GTFS stop times.
-    floor(extract(epoch FROM arrival.scheduled_arrival
-        - {{ service_day_start('arrival.service_date') }}) / 3600)::smallint
+    {{ service_hour('arrival.service_date', 'arrival.scheduled_arrival') }}
         AS service_hour,
     arrival.horizon_minutes,
     count(*) AS arrivals,
